@@ -35,8 +35,10 @@ namespace POpsAgent
     //    (bkz. AgentCapabilities, AgentFeatures, PeerDownload).
     // Önbellekteki dosyaya kimse güvenmek zorunda değildir: indiren her ajan boyutu ve SHA-256'yı imzalı manifest'le
     // denetler. Bir eşe dosya göndermek yönetici işlemi değildir; yalnızca POps loguna yazılır.
+    // Bir ajanın eş önbelleği güncelleme durumunun parçasıdır (AgentUpdater.PeerCache); Worker dakikalık denetimi, karantina,
+    // sınav ve yetenek değişikliklerinde yeniden denetimi ve servis dururken kapanışı aynı örnekle yapar.
     [SupportedOSPlatform("windows")]
-    public static class PeerCache
+    public sealed class PeerCache
     {
         public const int Port = 8817;
         public const string RuleGroup = "POps Peer Cache";
@@ -51,45 +53,70 @@ namespace POpsAgent
 
         private static readonly Regex Sha256HexRegex = new Regex("^[0-9a-f]{64}$", RegexOptions.Compiled);
 
-        // <veri klasörü>\cache (AgentPaths.PeerCacheDir); Worker bölmesinin b3 adımı yolu AgentPaths'ten verir
-        public static string Dir => Path.Combine(AgentUpdate.DataDir, AgentPaths.PeerCacheFolder);
+        private readonly CapabilityState _capabilities;
+        // Ağ karantinasının ve sınav modunun durum dosyaları (bkz. DefaultIsolated)
+        private readonly string _isolationState;
+        private readonly string _examState;
 
-        // Testler: saat, güvenlik duvarı betiği, dinlenen adres, yerel alt ağ ve karantina denetimi
-        internal static Func<DateTime> Clock { get; set; } = () => DateTime.UtcNow;
-        internal static Func<string, Task<(int Exit, string Output)>> FirewallRunner { get; set; } = RunPowerShellAsync;
-        internal static Func<IPEndPoint> ListenEndpoint { get; set; } = () => new IPEndPoint(IPAddress.IPv6Any, Port);
-        internal static Func<IPAddress, bool> IsLocalSubnet { get; set; } = InLocalSubnet;
-        internal static Func<bool> IsIsolated { get; set; } = DefaultIsolated;
+        // paths: önbellek klasörü (<veri klasörü>\cache), karantina ve sınav modunun durum dosyaları; capabilities: bağlamın
+        // yetenek durumu (peer_cache_enabled); firewall: güvenlik duvarı kuralının betiği, endpoint: sunucunun dinlediği adres
+        // (servis: PowerShell ve [::]:8817, bkz. MachineSeams; testlerde güvenlik duvarına dokunmayan sahte ve 127.0.0.1)
+        public PeerCache(AgentPaths paths, CapabilityState capabilities, Func<string, Task<(int Exit, string Output)>> firewall,
+            Func<IPEndPoint> endpoint)
+        {
+            ArgumentNullException.ThrowIfNull(paths);
+            _capabilities = capabilities ?? throw new ArgumentNullException(nameof(capabilities));
+            FirewallRunner = firewall ?? throw new ArgumentNullException(nameof(firewall));
+            ListenEndpoint = endpoint ?? throw new ArgumentNullException(nameof(endpoint));
+            Dir = paths.PeerCacheDir;
+            _isolationState = paths.SecureFile(NetworkIsolation.StateFileName);
+            _examState = paths.SecureFile(ExamMode.StateFileName);
+            IsIsolated = DefaultIsolated;
+        }
+
+        // <veri klasörü>\cache (AgentPaths.PeerCacheDir)
+        public string Dir { get; }
+
+        // peer_cache_enabled: kapalıysa paket tutulmaz, sunulmaz, eşlerden indirilmez
+        public bool Enabled => _capabilities.PeerCacheEnabled;
+
+        // Testler: saat, güvenlik duvarı betiği, dinlenen adres, yerel alt ağ ve karantina denetimi (servis değiştirmez)
+        internal Func<DateTime> Clock { get; set; } = () => DateTime.UtcNow;
+        internal Func<string, Task<(int Exit, string Output)>> FirewallRunner { get; set; }
+        internal Func<IPEndPoint> ListenEndpoint { get; set; }
+        internal Func<IPAddress, bool> IsLocalSubnet { get; set; } = InLocalSubnet;
+        internal Func<bool> IsIsolated { get; set; }
 
         // Ağ karantinası ya da sınav modu: ikisinin kuralları da gelen bağlantıyı engeller, giden bağlantıyı izin listesine
         // sınırlar; bu sırada sunulmaz ve eşlere gidilmez
-        internal static bool DefaultIsolated() => NetworkIsolation.IsActive || ExamMode.IsActive;
+        internal bool DefaultIsolated() => NetworkIsolation.IsActiveAt(_isolationState) || ExamMode.IsActiveAt(_examState);
 
         // update_agent'ta "peer_cache": true: sunucu bu paketin tutulup sunulmasını istiyor (yalnızca JSON true; başka
         // her değer, alanın yokluğu gibi, "tutma" demektir)
         public static bool Requested(JsonElement command) =>
             command.ValueKind == JsonValueKind.Object && command.TryGetProperty("peer_cache", out JsonElement flag) && flag.ValueKind == JsonValueKind.True;
 
+        // Önbellek klasörüne erişim ve 8817 portu makinede tektir: denetimler sıralanır
         private static readonly SemaphoreSlim Gate = new SemaphoreSlim(1, 1);
-        private static PeerCacheServer? _server;
+        private PeerCacheServer? _server;
         // SHA-256'sı bu süreçte denetlenmiş dosya (yol|boyut|zaman); her dakika yeniden hesaplanmaz
-        private static string? _verifiedKey;
-        private static bool _ruleAdded;
+        private string? _verifiedKey;
+        private bool _ruleAdded;
         // Kural var olabilir mi: bilinmiyorsa (açılış) önbellek klasörünün varlığına bakılır (çökme kalıntısı)
-        private static bool? _ruleMayExist;
-        private static DateTime _firewallRetryAfter = DateTime.MinValue;
+        private bool? _ruleMayExist;
+        private DateTime _firewallRetryAfter = DateTime.MinValue;
         // Servis duruyor: kapanıştan sonra kuyrukta kalan bir denetim sunucuyu yeniden açmasın
-        private static volatile bool _shutdown;
+        private volatile bool _shutdown;
 
         internal sealed record CachedPackage(string Sha256, string Path, long Size, DateTime CachedAtUtc);
 
         // Sunulan paketin portu (testler); sunulmuyorsa null
-        internal static int? ServingPort => _server?.Port;
-        internal static string? ServingSha256 => _server?.Sha256;
-        internal static int ActiveClients => _server?.ActiveClients ?? 0;
+        internal int? ServingPort => _server?.Port;
+        internal string? ServingSha256 => _server?.Sha256;
+        internal int ActiveClients => _server?.ActiveClients ?? 0;
 
         // Servis açılışında ve her dakika: süre, yetenek, karantina ve dosya bütünlüğüne göre sunucuyu açar/kapatır
-        public static async Task RunAsync(CancellationToken token)
+        public async Task RunAsync(CancellationToken token)
         {
             while (!token.IsCancellationRequested)
             {
@@ -99,7 +126,7 @@ namespace POpsAgent
             }
         }
 
-        public static async Task SyncAsync()
+        public async Task SyncAsync()
         {
             await Gate.WaitAsync();
             try { await SyncLockedAsync(); }
@@ -108,7 +135,7 @@ namespace POpsAgent
         }
 
         // Servis dururken: sunucu kapanır, güvenlik duvarı kuralı kaldırılır; önbellek dosyası kalır (yeni sürüm sürdürür)
-        public static async Task ShutdownAsync()
+        public async Task ShutdownAsync()
         {
             _shutdown = true;
             await Gate.WaitAsync();
@@ -120,7 +147,7 @@ namespace POpsAgent
         // Yeni bir güncelleme başlıyor (manifest doğrulandı, sürüm yeni): başka bir paket silinir. keep (emirde
         // "peer_cache": true) ise aynı paket yerinde kalır, yerel kaynak olarak kullanılır (bkz. TryCopyToAsync); değilse
         // önbellek tümüyle boşaltılır ve sunum durur (sunucu bu PC'nin paket tutmasını istemiyor).
-        public static async Task OnUpdateStartingAsync(string sha256, bool keep)
+        public async Task OnUpdateStartingAsync(string sha256, bool keep)
         {
             await Gate.WaitAsync();
             try
@@ -137,9 +164,9 @@ namespace POpsAgent
 
         // Doğrulanmış paketin önbelleğe kopyası (paket yerinde kalır). Kopya yeniden ölçülür; tutmazsa yazılmaz.
         // Sunum burada başlamaz: servis bu sırada güncelleme için duracaktır; açılışta ya da dakikalık denetimde başlar.
-        public static async Task<bool> StoreAsync(string verifiedPackage, string sha256, long size)
+        public async Task<bool> StoreAsync(string verifiedPackage, string sha256, long size)
         {
-            if (!AgentCapabilities.PeerCacheEnabled || !Sha256HexRegex.IsMatch(sha256 ?? "")) return false;
+            if (!Enabled || !Sha256HexRegex.IsMatch(sha256 ?? "")) return false;
             await Gate.WaitAsync();
             string target = Path.Combine(Dir, sha256!);
             string tmp = target + ".tmp";
@@ -173,9 +200,9 @@ namespace POpsAgent
         }
 
         // Aynı paket önbellekteyse hedefe kopyalanır (çağıran imzalı boyut ve SHA-256'yı yine denetler)
-        public static async Task<bool> TryCopyToAsync(string sha256, string destination)
+        public async Task<bool> TryCopyToAsync(string sha256, string destination)
         {
-            if (!AgentCapabilities.PeerCacheEnabled || !Sha256HexRegex.IsMatch(sha256 ?? "")) return false;
+            if (!Enabled || !Sha256HexRegex.IsMatch(sha256 ?? "")) return false;
             await Gate.WaitAsync();
             try
             {
@@ -193,10 +220,10 @@ namespace POpsAgent
         }
 
         // ------------------------------------------------------------------------------------------
-        private static async Task SyncLockedAsync()
+        private async Task SyncLockedAsync()
         {
             CachedPackage? package = Scan();
-            if (package != null && !AgentCapabilities.PeerCacheEnabled)
+            if (package != null && !Enabled)
             {
                 Delete(package.Path, "peer_cache_enabled kapalı");
                 package = null;
@@ -227,7 +254,7 @@ namespace POpsAgent
         }
 
         // Geçerli adlı en yeni paket; diğer dosyalar (eski paket, yarım .tmp) silinir
-        private static CachedPackage? Scan()
+        private CachedPackage? Scan()
         {
             if (!Directory.Exists(Dir)) return null;
             CachedPackage? newest = null;
@@ -252,7 +279,7 @@ namespace POpsAgent
         }
 
         // Dosyanın içeriği adındaki SHA-256'yla aynı mı (bu süreçte bir kez; ör. yeni sürüm açılışta)
-        private static bool IsIntact(CachedPackage package)
+        private bool IsIntact(CachedPackage package)
         {
             string key = Key(new FileInfo(package.Path));
             if (key == _verifiedKey) return true;
@@ -264,7 +291,7 @@ namespace POpsAgent
 
         private static string Key(FileInfo info) => $"{info.FullName}|{info.Length}|{info.LastWriteTimeUtc.Ticks}";
 
-        private static async Task StartServingAsync(CachedPackage package)
+        private async Task StartServingAsync(CachedPackage package)
         {
             if (_server != null && _server.Sha256 != package.Sha256)
             {
@@ -290,7 +317,7 @@ namespace POpsAgent
         }
 
         // force: servis duruyor; başarısız betik sonrası bekleme süresi beklenmez (kural kalmasın)
-        private static async Task StopServingAsync(string reason, bool force = false)
+        private async Task StopServingAsync(string reason, bool force = false)
         {
             if (_server != null)
             {
@@ -312,7 +339,7 @@ namespace POpsAgent
             }
         }
 
-        private static async Task EnsureRuleAsync()
+        private async Task EnsureRuleAsync()
         {
             if (_ruleAdded || Clock() < _firewallRetryAfter) return;
             _ruleMayExist = true;
@@ -325,7 +352,7 @@ namespace POpsAgent
             else FirewallFailed("eklenemedi", exit, output);
         }
 
-        private static async Task<(int Exit, string Output)> RunFirewallAsync(string script)
+        private async Task<(int Exit, string Output)> RunFirewallAsync(string script)
         {
             try { return await FirewallRunner(script); }
             catch (Exception ex) when (ex is InvalidOperationException || ex is System.ComponentModel.Win32Exception || ex is IOException)
@@ -334,7 +361,7 @@ namespace POpsAgent
             }
         }
 
-        private static void FirewallFailed(string what, int exit, string output)
+        private void FirewallFailed(string what, int exit, string output)
         {
             _firewallRetryAfter = Clock() + FirewallRetry;
             POpsHelpers.Log("PEERCACHE", $"Güvenlik duvarı kuralı {what} (çıkış {exit}: {LogText.Safe(output, 200)}); {FirewallRetry.TotalMinutes:0} dk sonra yeniden denenecek.", true);
@@ -398,14 +425,14 @@ Get-NetFirewallRule -Group {BitsDownload.Quote(RuleGroup)} -ErrorAction Silently
         // ------------------------------------------------------------------------------------------
         // Veri klasörünün diğer korumalı klasörleri gibi (bkz. FolderSettings.Secure): yalnızca SYSTEM ve Administrators,
         // sahibi güvenilir değilse SYSTEM yapılır
-        private static void EnsureDirectory()
+        private void EnsureDirectory()
         {
             string? error = POps.Shared.FolderSettings.Secure(Dir, usersRead: false, out bool tightened);
             if (error != null) throw new IOException($"{Dir} kilitlenemedi: {error}");
             if (tightened) POpsHelpers.Log("PEERCACHE", POps.Shared.FolderSettings.TightenedNote(Dir, usersRead: false));
         }
 
-        private static void TryDeleteEmptyDirectory()
+        private void TryDeleteEmptyDirectory()
         {
             try
             {
@@ -440,7 +467,7 @@ Get-NetFirewallRule -Group {BitsDownload.Quote(RuleGroup)} -ErrorAction Silently
         }
 
         // Testler: her test temiz başlar (önceki testin sunucusu kapanır, bellekteki durum unutulur)
-        internal static void ResetState()
+        internal void ResetState()
         {
             PeerCacheServer? server = _server;
             _server = null;
@@ -456,7 +483,7 @@ Get-NetFirewallRule -Group {BitsDownload.Quote(RuleGroup)} -ErrorAction Silently
             _shutdown = false;
         }
 
-        private static async Task<(int Exit, string Output)> RunPowerShellAsync(string script)
+        internal static async Task<(int Exit, string Output)> RunPowerShellAsync(string script)
         {
             var psi = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, @"WindowsPowerShell\v1.0\powershell.exe"))
             {

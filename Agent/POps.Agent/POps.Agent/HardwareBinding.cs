@@ -88,7 +88,7 @@ namespace POpsAgent
         public IReadOnlyList<string> SameParts { get; private set; } = Array.Empty<string>();
 
         public string PrimaryPath => _paths.SecureFile(FileName);
-        private static string MirrorPath() => AgentCredentials.PersistPath(FileName);
+        private string MirrorPath() => AgentCredentials.PersistPath(FileName, _paths.ConfigPaths);
 
         // dna_payload ile aynı normalleştirme (HardwareInfo.GetHardwareDnaInternal)
         public static string NormalizeUuid(string raw) =>
@@ -295,7 +295,7 @@ namespace POpsAgent
         {
             yield return (IdentityPath, Path.GetFileName(IdentityPath));
             yield return (_paths.SecureFile(AgentCredentials.SecretFileName), AgentCredentials.SecretFileName);
-            yield return (AgentCredentials.PersistPath(AgentCredentials.SecretFileName), AgentCredentials.SecretFileName + PersistSuffix);
+            yield return (AgentCredentials.PersistPath(AgentCredentials.SecretFileName, _paths.ConfigPaths), AgentCredentials.SecretFileName + PersistSuffix);
             yield return (_paths.SecureFile(AgentCredentials.DeviceBypassSecretFileName), AgentCredentials.DeviceBypassSecretFileName);
             yield return (PrimaryPath, FileName);
             yield return (MirrorPath(), FileName + PersistSuffix);

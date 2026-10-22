@@ -28,7 +28,6 @@ namespace POps.Shared
         public const string ChainMessage = "[GÜVENLİK] Sunucu sertifikası kurum sertifikasına (server-ca.pem) zincirlenmiyor";
 
         private readonly object _gate = new object();
-        private readonly Func<string> _caPath;
         private string _loadedPath;
         private X509Certificate2 _ca;
         private bool _broken;
@@ -37,18 +36,10 @@ namespace POps.Shared
         // caPath: kurum sertifikasının dosyası (servis: <veri klasörü>\secure\server-ca.pem)
         public ServerTrust(string caPath)
         {
-            ArgumentNullException.ThrowIfNull(caPath);
-            _caPath = () => caPath;
+            CaPath = caPath ?? throw new ArgumentNullException(nameof(caPath));
         }
 
-        // caPath her kullanımda okunur, yol değişince dosya yeniden okunur. Ajanın süreç varsayılanı içindir (Worker bölmesinin
-        // b3 adımına kadar SecureStore.Dir'i izler; bkz. POpsAgent.AgentHttp.Default).
-        public ServerTrust(Func<string> caPath)
-        {
-            _caPath = caPath ?? throw new ArgumentNullException(nameof(caPath));
-        }
-
-        public string CaPath => _caPath();
+        public string CaPath { get; }
 
         // Sunucuya bildirilen kip ("server_ca"): dosya varsa (bozuk olsa da) custom, yoksa system
         public string Mode

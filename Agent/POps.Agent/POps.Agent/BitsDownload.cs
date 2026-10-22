@@ -16,22 +16,29 @@ namespace POpsAgent
     // BITS kullanılamazsa (modül/hizmet yok, sertifika kurumun özel CA'sıyla ve makine deposunda değil, sunucu
     // Range desteklemiyor...) çağıran HttpClient'la indirir. Değerler betiğe yalnızca tek tırnaklı, kaçışlı
     // değişmez olarak girer.
+    // Bir ajanın güncelleme durumunun parçasıdır (bkz. AgentUpdater).
     [SupportedOSPlatform("windows")]
-    public static class BitsDownload
+    public sealed class BitsDownload
     {
         public enum Outcome { Done, Pending, Unavailable }
 
         public static readonly TimeSpan Timeout = TimeSpan.FromMinutes(15);
         public const string JobPrefix = "POps update ";
 
-        // Testler kapatır ya da sahte çalıştırıcı verir
-        internal static bool Enabled { get; set; } = true;
-        internal static Func<string, TimeSpan, Task<(int Exit, string Output)>> Runner { get; set; } = RunPowerShellAsync;
+        // runner: BITS betiğini çalıştıran (betik, süre; servis: PowerShell, bkz. MachineSeams.Bits). null: BITS kullanılmaz
+        // (testler, makine kapısı verilmeyen kod), paket HttpClient ile indirilir.
+        public BitsDownload(Func<string, TimeSpan, Task<(int Exit, string Output)>> runner)
+        {
+            Runner = runner;
+        }
+
+        internal Func<string, TimeSpan, Task<(int Exit, string Output)>> Runner { get; }
+        public bool Enabled => Runner != null;
 
         public static string JobName(string sha256) => string.Concat(JobPrefix, sha256.AsSpan(0, 16));
 
         // Pending: BITS işi süre içinde bitmedi, iş durmaz (sonraki emir sürdürür). Unavailable: eski yola düşülmeli.
-        public static async Task<Outcome> DownloadAsync(string url, string destination, string sha256)
+        public async Task<Outcome> DownloadAsync(string url, string destination, string sha256)
         {
             if (!Enabled) return Outcome.Unavailable;
             try
@@ -97,7 +104,8 @@ while ($true) {{
             return lines.Length == 0 ? "" : lines[^1];
         }
 
-        private static async Task<(int Exit, string Output)> RunPowerShellAsync(string script, TimeSpan timeout)
+        // Servisin BITS çalıştırıcısı (yalnızca MachineSeams.Production kurar)
+        internal static async Task<(int Exit, string Output)> RunPowerShellAsync(string script, TimeSpan timeout)
         {
             var psi = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, @"WindowsPowerShell\v1.0\powershell.exe"))
             {

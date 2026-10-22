@@ -24,8 +24,9 @@ namespace POps.Tests.Agent
     // Laboratuvar eş önbelleği (docs/agent.md "Peer cache contract", docs/design/peer-cache.md seçenek A): önbellek,
     // sunucunun peer_cache bayrağı, salt okunur sunucu, güvenlik duvarı kuralı (sahte çalıştırıcı), eşlerden indirme,
     // karantina / sınav modu ve yetenek anahtarı. Sunucu yalnızca 127.0.0.1'de rastgele portta açılır.
-    [Collection(SharedStateCollection.Name)]
-    public class PeerCacheTests : SharedStateTestBase, IDisposable
+    // Machine: eş önbelleği sunucuları 127.0.0.1'de dinler; betiklerin ayrıştırılması için powershell.exe başlatılır
+    [Collection(MachineCollection.Name)]
+    public class PeerCacheTests : TestBase, IDisposable
     {
         private const string MsiName = "POps-Agent-9.9.9-win-x64.msi";
         private readonly byte[] _package = RandomNumberGenerator.GetBytes(200_000);
@@ -41,9 +42,15 @@ namespace POps.Tests.Agent
 
         public PeerCacheTests()
         {
-            AgentUpdate.DataDir = TestEnvironment.NewDir("peer-data");
-            SecureStore.Dir = TestEnvironment.NewDir("peer-secure");
-            AgentCapabilities.Load(); // dosya yok: hepsi açık
+            var generator = new Ed25519KeyPairGenerator();
+            generator.Init(new Ed25519KeyGenerationParameters(new SecureRandom()));
+            var pair = generator.GenerateKeyPair();
+            _key = (Ed25519PrivateKeyParameters)pair.Private;
+            _trustedKey = Convert.ToBase64String(((Ed25519PublicKeyParameters)pair.Public).GetEncoded());
+
+            _agent = AgentHarness.Create("peer");
+            _agent.Capabilities.Load(); // dosya yok: hepsi açık
+            _updater = _agent.NewUpdater("0.1.22-alpha", _trustedKey, (msi, sha256, version) => _launch(msi, sha256, version));
             PeerCache.FirewallRunner = script =>
             {
                 lock (_firewall) _firewall.Add(script);
@@ -57,20 +64,19 @@ namespace POps.Tests.Agent
                 Interlocked.Increment(ref _listens);
                 return new IPEndPoint(IPAddress.Loopback, 0);
             };
-
-            var generator = new Ed25519KeyPairGenerator();
-            generator.Init(new Ed25519KeyGenerationParameters(new SecureRandom()));
-            var pair = generator.GenerateKeyPair();
-            _key = (Ed25519PrivateKeyParameters)pair.Private;
-            _trustedKey = Convert.ToBase64String(((Ed25519PublicKeyParameters)pair.Public).GetEncoded());
         }
 
         // Güncelleme: manifest'i doğrulayan test anahtarı ve updater'ın başlatılması (dönen: başlatıldı mı). Testin ajanının
-        // güncelleme durumu ilk emirde bunlarla kurulur (0.1.22-alpha kurulu).
+        // güncelleme durumu bunlarla kurulur (0.1.22-alpha kurulu); eş önbelleği ve eşlerden indirme onun parçalarıdır.
         private readonly string _trustedKey;
         private Func<string, string, string, bool> _launch = (_, _, _) => true;
-        private AgentUpdater _updater;
-        private AgentUpdater Updater => _updater ??= new AgentUpdater(AgentHarness.FromStatics().Paths, "0.1.22-alpha", _trustedKey, _launch);
+        private readonly AgentHarness _agent;
+        private readonly AgentUpdater _updater;
+        private AgentUpdater Updater => _updater;
+        private PeerCache PeerCache => _updater.PeerCache;
+        private PeerDownload PeerDownload => _updater.PeerDownload;
+        // X-Agent-Features: bu bağlamın yetenek durumundan (bkz. CommandConnection)
+        private AgentFeatures AgentFeatures => new AgentFeatures(_agent.Capabilities);
 
         public void Dispose()
         {
@@ -81,11 +87,7 @@ namespace POps.Tests.Agent
             }
             foreach (TcpListener raw in _rawPeers) raw.Stop();
             PeerCache.ResetState();
-            // Sonraki testler yetenekleri açık bulsun
-            SecureStore.Dir = TestEnvironment.NewDir("peer-secure-reset");
-            AgentCapabilities.Load();
-            AgentUpdate.DataDir = TestEnvironment.DefaultDataDir;
-            SecureStore.Dir = TestEnvironment.DefaultSecureDir;
+            _agent.Dispose();
         }
 
         // ---------------------------------------------------------------------------------------- yardımcılar
@@ -273,7 +275,7 @@ namespace POps.Tests.Agent
             Assert.Equal(new[] { "received", "downloaded", "verified", "updater_started" }, Stages());
             Assert.Equal(AgentUpdate.SourceServer, Detail("downloaded"));
             Assert.True(packageThereAtLaunch);
-            Assert.Equal(Path.Combine(AgentUpdate.UpdatesDir, MsiName), launchedPackage);
+            Assert.Equal(Path.Combine(_agent.Paths.UpdatesDir, MsiName), launchedPackage);
             Assert.Equal(_package, cachedAtLaunch);
             Assert.Equal(new[] { Sha(_package) }, Directory.GetFiles(PeerCache.Dir).Select(Path.GetFileName));
             // Klasör yalnızca SYSTEM/Administrators'a açık (testte "SYSTEM" testi çalıştıran kullanıcıdır)
@@ -523,8 +525,8 @@ namespace POps.Tests.Agent
 
             // İndiren ajan meşgul eşi atlayıp sıradaki kaynağa geçer
             Server server = Serving(_package);
-            string path = Path.Combine(AgentUpdate.DataDir, MsiName);
-            Assert.True(await AgentUpdate.DownloadVerifiedAsync(new HttpClient(server), "https://pops.example/updates/" + MsiName, path, Artifact(), Update(),
+            string path = Path.Combine(_agent.Paths.DataDir, MsiName);
+            Assert.True(await Updater.DownloadVerifiedAsync(new HttpClient(server), "https://pops.example/updates/" + MsiName, path, Artifact(), Update(),
                 new[] { Peer("HW-000000000001", peer.Port, Sha(_package)) }));
             Assert.Equal(1, server.Requests);
             Assert.Equal(AgentUpdate.SourceServer, Detail("downloaded"));
@@ -647,9 +649,9 @@ namespace POps.Tests.Agent
         {
             PeerCacheServer peer = StartPeer(_package, Sha(_package));
             Server server = Serving(_package);
-            string path = Path.Combine(AgentUpdate.DataDir, MsiName);
+            string path = Path.Combine(_agent.Paths.DataDir, MsiName);
 
-            Assert.True(await AgentUpdate.DownloadVerifiedAsync(new HttpClient(server), "https://pops.example/updates/" + MsiName, path, Artifact(), Update(),
+            Assert.True(await Updater.DownloadVerifiedAsync(new HttpClient(server), "https://pops.example/updates/" + MsiName, path, Artifact(), Update(),
                 new[] { Peer("HW-3F9A1C7B2E4D", peer.Port, Sha(_package)) }));
             Assert.Equal(0, server.Requests);
             Assert.Equal(_package, File.ReadAllBytes(path));
@@ -673,9 +675,9 @@ namespace POps.Tests.Agent
                 probe.Stop();
             }
             Server server = Serving(_package);
-            string path = Path.Combine(AgentUpdate.DataDir, MsiName);
+            string path = Path.Combine(_agent.Paths.DataDir, MsiName);
 
-            Assert.True(await AgentUpdate.DownloadVerifiedAsync(new HttpClient(server), "https://pops.example/updates/" + MsiName, path, Artifact(), Update(), new[]
+            Assert.True(await Updater.DownloadVerifiedAsync(new HttpClient(server), "https://pops.example/updates/" + MsiName, path, Artifact(), Update(), new[]
             {
                 Peer("HW-000000000001", closedPort, Sha(_package)),
                 Peer("HW-000000000002", liar.Port, Sha(_package)),
@@ -694,9 +696,9 @@ namespace POps.Tests.Agent
             PeerDownload.HeaderTimeout = TimeSpan.FromMilliseconds(300);
             int silent = RawPeer(_ => Task.Delay(TimeSpan.FromSeconds(5)));
             Server server = Serving(_package);
-            string path = Path.Combine(AgentUpdate.DataDir, MsiName);
+            string path = Path.Combine(_agent.Paths.DataDir, MsiName);
 
-            Assert.True(await AgentUpdate.DownloadVerifiedAsync(new HttpClient(server), "https://pops.example/updates/" + MsiName, path, Artifact(), Update(),
+            Assert.True(await Updater.DownloadVerifiedAsync(new HttpClient(server), "https://pops.example/updates/" + MsiName, path, Artifact(), Update(),
                 new[] { Peer("HW-000000000001", silent, Sha(_package)) }));
             Assert.Equal(1, server.Requests);
             Assert.Equal(AgentUpdate.SourceServer, Detail("downloaded"));
@@ -713,9 +715,9 @@ namespace POps.Tests.Agent
                 await Task.Delay(TimeSpan.FromSeconds(5));
             });
             Server server = Serving(_package);
-            string path = Path.Combine(AgentUpdate.DataDir, MsiName);
+            string path = Path.Combine(_agent.Paths.DataDir, MsiName);
 
-            Assert.True(await AgentUpdate.DownloadVerifiedAsync(new HttpClient(server), "https://pops.example/updates/" + MsiName, path, Artifact(), Update(),
+            Assert.True(await Updater.DownloadVerifiedAsync(new HttpClient(server), "https://pops.example/updates/" + MsiName, path, Artifact(), Update(),
                 new[] { Peer("HW-000000000001", stalling, Sha(_package)) }));
             Assert.Equal(1, server.Requests);
             Assert.Equal(_package, File.ReadAllBytes(path));
@@ -732,9 +734,9 @@ namespace POps.Tests.Agent
                 await stream.WriteAsync(_package);
             });
             Server server = Serving(_package);
-            string path = Path.Combine(AgentUpdate.DataDir, MsiName);
+            string path = Path.Combine(_agent.Paths.DataDir, MsiName);
 
-            Assert.True(await AgentUpdate.DownloadVerifiedAsync(new HttpClient(server), "https://pops.example/updates/" + MsiName, path, Artifact(), Update(),
+            Assert.True(await Updater.DownloadVerifiedAsync(new HttpClient(server), "https://pops.example/updates/" + MsiName, path, Artifact(), Update(),
                 new[] { Peer("HW-000000000001", noLength, Sha(_package)) }));
             Assert.Equal(1, server.Requests);
             Assert.Equal(AgentUpdate.SourceServer, Detail("downloaded"));
@@ -868,8 +870,8 @@ namespace POps.Tests.Agent
             await PeerCache.SyncAsync();
             Assert.NotNull(PeerCache.ServingPort);
 
-            SecureStore.WriteProtected(ExamMode.StatePath, "{}");
-            Assert.True(ExamMode.IsActive);
+            SecureStore.WriteProtected(_agent.Paths.SecureFile(ExamMode.StateFileName), "{}");
+            Assert.True(ExamMode.IsActiveAt(_agent.Paths.SecureFile(ExamMode.StateFileName)));
             await PeerCache.SyncAsync();
             Assert.Null(PeerCache.ServingPort);
             Assert.Contains("Remove-NetFirewallRule", Firewall().Last());
@@ -887,7 +889,7 @@ namespace POps.Tests.Agent
             await PeerCache.SyncAsync();
             Assert.Null(PeerCache.ServingPort);
 
-            File.Delete(ExamMode.StatePath);
+            File.Delete(_agent.Paths.SecureFile(ExamMode.StateFileName));
             await PeerCache.SyncAsync();
             Assert.Equal(Sha(next), PeerCache.ServingSha256);
         }
@@ -1001,10 +1003,10 @@ namespace POps.Tests.Agent
             await PeerCache.SyncAsync();
             Assert.NotNull(PeerCache.ServingPort);
 
-            SecureStore.WriteProtected(SecureStore.PathOf(AgentCapabilities.FileName), "{\"terminal_enabled\":true,\"vision_enabled\":true,\"peer_cache_enabled\":false}");
-            AgentCapabilities.Load();
-            Assert.False(AgentCapabilities.PeerCacheEnabled);
-            Assert.True(AgentCapabilities.TerminalEnabled);
+            SecureStore.WriteProtected(_agent.Paths.SecureFile(AgentCapabilities.FileName), "{\"terminal_enabled\":true,\"vision_enabled\":true,\"peer_cache_enabled\":false}");
+            _agent.Capabilities.Load();
+            Assert.False(_agent.Capabilities.PeerCacheEnabled);
+            Assert.True(_agent.Capabilities.TerminalEnabled);
 
             // Sunma: önbellek silinir, sunucu durur
             await PeerCache.SyncAsync();
@@ -1021,42 +1023,42 @@ namespace POps.Tests.Agent
             Assert.Equal(0, asked);
             Assert.Equal(AgentUpdate.SourceServer, Detail("downloaded"));
             Assert.False(File.Exists(CachePath()));
-            Assert.False(await PeerCache.StoreAsync(Path.Combine(AgentUpdate.UpdatesDir, MsiName), Sha(_package), _package.Length));
+            Assert.False(await PeerCache.StoreAsync(Path.Combine(_agent.Paths.UpdatesDir, MsiName), Sha(_package), _package.Length));
         }
 
         [Fact]
         public void Capability_ServerCanOnlySwitchItOff_AndItIsReported()
         {
-            AgentCapabilities.Load();
-            var (disabled, _) = AgentCapabilities.ApplyServerRequest(JsonDocument.Parse("{\"action\":\"set_capabilities\",\"peer_cache_enabled\":false}").RootElement);
+            _agent.Capabilities.Load();
+            var (disabled, _) = _agent.Capabilities.ApplyServerRequest(JsonDocument.Parse("{\"action\":\"set_capabilities\",\"peer_cache_enabled\":false}").RootElement);
             Assert.Equal(new[] { AgentCapabilities.PeerCacheKey }, disabled);
-            Assert.False(AgentCapabilities.PeerCacheEnabled);
+            Assert.False(_agent.Capabilities.PeerCacheEnabled);
 
-            var (_, ignored) = AgentCapabilities.ApplyServerRequest(JsonDocument.Parse("{\"peer_cache_enabled\":true}").RootElement);
+            var (_, ignored) = _agent.Capabilities.ApplyServerRequest(JsonDocument.Parse("{\"peer_cache_enabled\":true}").RootElement);
             Assert.Equal(new[] { AgentCapabilities.PeerCacheKey }, ignored);
-            Assert.False(AgentCapabilities.PeerCacheEnabled);
+            Assert.False(_agent.Capabilities.PeerCacheEnabled);
 
             // Kalıcı; "capabilities" mesajı peer_cache_enabled'ı da taşır (şemada isteğe bağlı)
-            AgentCapabilities.Load();
-            Assert.False(AgentCapabilities.PeerCacheEnabled);
-            Assert.Equal(false, AgentCapabilities.StatusMessage()[AgentCapabilities.PeerCacheKey]);
+            _agent.Capabilities.Load();
+            Assert.False(_agent.Capabilities.PeerCacheEnabled);
+            Assert.Equal(false, _agent.Capabilities.StatusMessage()[AgentCapabilities.PeerCacheKey]);
         }
 
         [Fact]
         public void Capability_UnreadableFile_SwitchesPeerCacheOff()
         {
-            SecureStore.WriteProtected(SecureStore.PathOf(AgentCapabilities.FileName), "{ broken");
-            AgentCapabilities.Load();
-            Assert.False(AgentCapabilities.PeerCacheEnabled);
+            SecureStore.WriteProtected(_agent.Paths.SecureFile(AgentCapabilities.FileName), "{ broken");
+            _agent.Capabilities.Load();
+            Assert.False(_agent.Capabilities.PeerCacheEnabled);
         }
 
         [Fact]
         public void Capability_OlderFileWithoutTheKey_KeepsPeerCacheOn()
         {
-            SecureStore.WriteProtected(SecureStore.PathOf(AgentCapabilities.FileName), "{\"terminal_enabled\":false,\"vision_enabled\":true}");
-            AgentCapabilities.Load();
-            Assert.True(AgentCapabilities.PeerCacheEnabled);
-            Assert.False(AgentCapabilities.TerminalEnabled);
+            SecureStore.WriteProtected(_agent.Paths.SecureFile(AgentCapabilities.FileName), "{\"terminal_enabled\":false,\"vision_enabled\":true}");
+            _agent.Capabilities.Load();
+            Assert.True(_agent.Capabilities.PeerCacheEnabled);
+            Assert.False(_agent.Capabilities.TerminalEnabled);
         }
 
         // ---------------------------------------------------------------------------------------- duyuru
@@ -1069,8 +1071,8 @@ namespace POps.Tests.Agent
             Assert.Contains("peer_cache", AgentFeatures.Header.Split(','));
 
             // Kapalı yetenekle duyurulmaz: sunucu bu PC'yi tohum ya da eş seçmesin
-            SecureStore.WriteProtected(SecureStore.PathOf(AgentCapabilities.FileName), "{\"peer_cache_enabled\":false}");
-            AgentCapabilities.Load();
+            SecureStore.WriteProtected(_agent.Paths.SecureFile(AgentCapabilities.FileName), "{\"peer_cache_enabled\":false}");
+            _agent.Capabilities.Load();
             Assert.DoesNotContain("peer_cache", AgentFeatures.Header.Split(','));
             Assert.Contains("power", AgentFeatures.Header.Split(','));
             Assert.Matches("^[a-z0-9_]+(,[a-z0-9_]+)*$", AgentFeatures.Header);

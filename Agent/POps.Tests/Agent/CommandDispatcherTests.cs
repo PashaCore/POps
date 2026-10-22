@@ -14,8 +14,9 @@ namespace POps.Tests.Agent
     // Komut tablosu (bkz. CommandDispatcher; Worker.cs bölmesinin a1 adımı). Eski if/else zincirinin işlediği her eylem
     // tabloda, komut kanalının her sunucu mesajının bir işleyicisi var, aynı eylem iki işleyicide olamaz, tanınmayan eylem
     // yok sayılır.
-    [Collection(SharedStateCollection.Name)]
-    public class CommandDispatcherTests : SharedStateTestBase, IDisposable
+    // Machine: Worker'ın eş önbelleği sunucusu (TcpListener) IL'den ulaşılabilir
+    [Collection(MachineCollection.Name)]
+    public class CommandDispatcherTests : TestBase, IDisposable
     {
         // Worker.HandleServerMessageAsync'in if/else zincirinin (a1'den önce) işlediği eylemler, zincirdeki sırayla
         private static readonly string[] OldChainActions =
@@ -26,16 +27,15 @@ namespace POps.Tests.Agent
             "update_result_ack", "result_ack", "scan_updates", "install_updates",
         };
 
+        private readonly AgentHarness _agent = AgentHarness.Create("dispatcher");
         private readonly Worker _worker;
         private readonly List<JsonElement> _sent = new List<JsonElement>();
         private readonly List<string> _tray = new List<string>();
 
         public CommandDispatcherTests()
         {
-            SecureStore.Dir = TestEnvironment.NewDir("dispatcher-secure");
-            AgentUpdate.DataDir = TestEnvironment.NewDir("dispatcher-data");
-            AgentCapabilities.Load();
-            _worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context)
+            _agent.Capabilities.Load();
+            _worker = new Worker(NullLogger<Worker>.Instance, _agent.Context)
             {
                 HwId = "HW-DISPATCH",
                 SendOverride = payload =>
@@ -50,9 +50,7 @@ namespace POps.Tests.Agent
         public void Dispose()
         {
             _worker.Dispose();
-            SecureStore.Dir = TestEnvironment.DefaultSecureDir;
-            AgentUpdate.DataDir = TestEnvironment.DefaultDataDir;
-            AgentCapabilities.Load();
+            _agent.Dispose();
         }
 
         [Fact]

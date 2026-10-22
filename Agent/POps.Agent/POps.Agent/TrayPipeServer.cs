@@ -9,6 +9,43 @@ using System.Threading.Tasks;
 
 namespace POpsAgent
 {
+    // Tepsi borusuna bağlanan istemcinin denetimi: ret nedeni (null: kabul) ve istemcinin süreç kimliği (bilinmiyorsa 0;
+    // tepsinin oturumu ve kullanıcısı ondan bulunur)
+    public delegate string? PipeClientCheck(Microsoft.Win32.SafeHandles.SafePipeHandle pipe, out uint clientPid);
+
+    // Tepsi borusunun adı ve bağlanan istemcinin denetimi (makine kapısı, bkz. MachineSeams.TrayPipe). Servis kurulu tepsinin
+    // borusunu açar (Installed: "POpsTrayPipe", yalnızca kurulum klasöründeki tepsi); kapı verilmeyen kod ve testler kurulu
+    // servisle ve gerçek tepsiyle çakışmayan bir ad kullanır (Unique: bağlanan her istemci reddedilir).
+    public sealed class TrayPipeOptions
+    {
+        public const string InstalledName = "POpsTrayPipe";
+
+        // Boruya yalnızca kurulum klasöründeki tepsi bağlanabilir (bkz. PipeClientVerifier)
+        private static readonly string TrayExePath = Path.Combine(AppContext.BaseDirectory, "POpsTray.exe");
+
+        public TrayPipeOptions(string name, PipeClientCheck clientCheck)
+        {
+            Name = name ?? throw new ArgumentNullException(nameof(name));
+            ClientCheck = clientCheck ?? throw new ArgumentNullException(nameof(clientCheck));
+        }
+
+        public string Name { get; }
+        public PipeClientCheck ClientCheck { get; }
+
+        // Servis (yalnızca MachineSeams.Production): kurulu tepsinin borusu, imzası ve yolu doğrulanan tepsi
+        internal static TrayPipeOptions Installed() =>
+            new TrayPipeOptions(InstalledName, (Microsoft.Win32.SafeHandles.SafePipeHandle pipe, out uint clientPid) => PipeClientVerifier.Verify(pipe, TrayExePath, out clientPid));
+
+        // Kurulu servisle çakışmayan ad; bağlanan her istemci reddedilir
+        public static TrayPipeOptions Unique() => new TrayPipeOptions(string.Concat(InstalledName, "-", Guid.NewGuid().ToString("N").AsSpan(0, 8)), RefuseClient);
+
+        private static string? RefuseClient(Microsoft.Win32.SafeHandles.SafePipeHandle pipe, out uint clientPid)
+        {
+            clientPid = 0;
+            return "makine kapısı verilmedi: tepsi borusuna istemci kabul edilmez";
+        }
+    }
+
     public sealed class TrayPipeServer : IDisposable
     {
         private const int MaxPipeMessageBytes = 32 * 1024 * 1024;
@@ -25,13 +62,14 @@ namespace POpsAgent
         public event Action OnConnected = delegate { };
         private readonly object _writeLock = new object();
 
-        // Boruya yalnızca kurulum klasöründeki tepsi bağlanabilir (bkz. PipeClientVerifier)
-        private static readonly string TrayExePath = Path.Combine(AppContext.BaseDirectory, "POpsTray.exe");
+        // options: borunun adı ve istemci denetimi (servis: kurulu tepsi; testler başka bir ad ve sahte denetim kullanır, gerçek
+        // tepsiyle ve kurulu servisle çakışmasın)
+        public TrayPipeServer(TrayPipeOptions options)
+        {
+            Options = options ?? throw new ArgumentNullException(nameof(options));
+        }
 
-        // Testler başka bir ad ve sahte istemci denetimi kullanır (gerçek tepsiyle ve kurulu servisle çakışmasın)
-        internal static string PipeName { get; set; } = "POpsTrayPipe";
-        // null: kurulu tepsi doğrulaması (PipeClientVerifier). Dönen: ret nedeni, null kabul.
-        internal static Func<Microsoft.Win32.SafeHandles.SafePipeHandle, string?>? ClientCheckOverride { get; set; }
+        public TrayPipeOptions Options { get; }
 
         public Task Start()
         {
@@ -88,7 +126,7 @@ namespace POpsAgent
 
         private async Task ListenPipeAsync(CancellationToken token)
         {
-            string pipeName = PipeName;
+            string pipeName = Options.Name;
             while (!token.IsCancellationRequested)
             {
                 try
@@ -112,10 +150,7 @@ namespace POpsAgent
                     POpsHelpers.Log("PIPE", $"Bekleniyor: {pipeName}");
 
                     await _pipeServer.WaitForConnectionAsync(token);
-                    uint clientPid = 0;
-                    string? rejection = ClientCheckOverride != null
-                        ? ClientCheckOverride(_pipeServer.SafePipeHandle)
-                        : PipeClientVerifier.Verify(_pipeServer.SafePipeHandle, TrayExePath, out clientPid);
+                    string? rejection = Options.ClientCheck(_pipeServer.SafePipeHandle, out uint clientPid);
                     if (rejection != null)
                     {
                         POpsHelpers.Log("PIPE", $"[GÜVENLİK] Tepsi borusuna doğrulanmamış istemci bağlandı, bağlantı kesildi: {rejection}", true);

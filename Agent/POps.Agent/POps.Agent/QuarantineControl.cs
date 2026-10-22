@@ -29,12 +29,13 @@ namespace POpsAgent
         // Ağ yalıtımının durum dosyası (NetworkIsolation yazar): varsa ağ yalıtılmış
         private readonly string _isolationState;
 
-        // paths: kilit kaydı, ağ yalıtımının durumu ve bypass denemelerinin kaydı güvenli depoda; unlocked: karantina kalkınca
-        // (null: hiçbir şey)
+        // paths: kilit kaydı, ağ yalıtımının durumu, kiosk kaydı ve bypass denemelerinin kaydı güvenli depoda; kiosk: Ctrl+Alt+Del
+        // politikalarının kayıt defteri (bkz. MachineSeams.Kiosk); unlocked: karantina kalkınca (null: hiçbir şey)
         public QuarantineControl(AgentPaths paths, Action<string> toTray, Func<Task<bool>> enableIsolation, Func<Task<bool>> disableIsolation,
-            OfflineBypass bypass = null, Action<LocalAuditEvent> audit = null, Action unlocked = null)
+            IKioskRegistry kiosk, OfflineBypass bypass = null, Action<LocalAuditEvent> audit = null, Action unlocked = null)
         {
             ArgumentNullException.ThrowIfNull(paths);
+            Kiosk = new KioskMode(paths.SecureFile(KioskMode.FileName), kiosk ?? throw new ArgumentNullException(nameof(kiosk)));
             _toTray = toTray;
             _enableIsolation = enableIsolation;
             _disableIsolation = disableIsolation;
@@ -46,6 +47,9 @@ namespace POpsAgent
         }
 
         public OfflineBypass Bypass => _bypass;
+
+        // Kilit sürerken kapatılan Ctrl+Alt+Del seçenekleri (bkz. KioskMode)
+        public KioskMode Kiosk { get; }
 
         public string LockPath { get; }
 
@@ -133,7 +137,7 @@ namespace POpsAgent
             try { SecureStore.WriteProtected(LockPath, JsonSerializer.Serialize(new Dictionary<string, string> { ["reason"] = reason })); }
             catch (Exception ex) { POpsHelpers.Log("AGENT", $"Kilit durumu yazılamadı ({LockPath}): {ex.Message}", true); }
             // Ctrl+Alt+Del seçenekleri (Görev Yöneticisi, oturumu kapat, kullanıcı değiştir, ...) kilit sürerken kapalı
-            KioskMode.Engage();
+            Kiosk.Engage();
             _toTray(LockdownMessage(reason));
             if (!wasLocked) _audit(LocalAudit.QuarantineStarted(AuditSource(source)));
             if (alreadyIsolated)
@@ -158,7 +162,7 @@ namespace POpsAgent
         {
             if (!IsLocked)
             {
-                KioskMode.Release();
+                Kiosk.Release();
                 _toTray(UnlockMessage("sync"));
                 return true;
             }
@@ -171,7 +175,7 @@ namespace POpsAgent
             }
             SecureStore.Delete(LockPath);
             LastIsolationError = null;
-            KioskMode.Release();
+            Kiosk.Release();
             _unlocked();
             _toTray(UnlockMessage(source));
             _audit(LocalAudit.QuarantineFinished(AuditSource(source)));
@@ -192,7 +196,7 @@ namespace POpsAgent
         {
             // Sonradan oturum açan kullanıcının kovanı da kapsanır; kilit yoksa karantinada oturumu kapatmış
             // kullanıcının bekleyen ayarları geri alınır
-            KioskMode.Sync(IsLocked);
+            Kiosk.Sync(IsLocked);
             if (IsLocked) _toTray(LockdownMessage(LockReason));
             else _toTray(UnlockMessage("sync"));
         }

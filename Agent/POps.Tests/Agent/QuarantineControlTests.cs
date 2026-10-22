@@ -14,8 +14,7 @@ namespace POps.Tests.Agent
 {
     // Karantina: lockdown / unlock / DNS eşiği / çevrimdışı bypass aynı yoldan geçer; kilit durumu diskte tutulur.
     // Tepsi ve güvenlik duvarı sahtedir.
-    [Collection(SharedStateCollection.Name)]
-    public class QuarantineControlTests : SharedStateTestBase
+    public class QuarantineControlTests : TestBase
     {
         private const string HwId = "HW-678CC8C5265E";
         private const string Secret = "sekret-Ç-1";
@@ -25,23 +24,20 @@ namespace POps.Tests.Agent
         private int _enabled, _disabled;
         private bool _disableSucceeds = true;
         private readonly List<LocalAuditEvent> _audit = new List<LocalAuditEvent>();
-
-        public QuarantineControlTests()
-        {
-            SecureStore.Dir = TestEnvironment.NewDir("quarantine");
-        }
+        // Testin klasörleri ve makine kapıları (kiosk kaydı bellekte)
+        private readonly AgentHarness _agent = AgentHarness.Create("quarantine");
 
         private QuarantineControl Control(OfflineBypass bypass = null, Action unlocked = null) => new QuarantineControl(
-            AgentHarness.FromStatics().Paths,
+            _agent.Paths,
             _tray.Add,
-            () => { _enabled++; File.WriteAllText(NetworkIsolation.StatePath, "{}"); return Task.FromResult(true); },
+            () => { _enabled++; File.WriteAllText(_agent.Paths.SecureFile(NetworkIsolation.StateFileName), "{}"); return Task.FromResult(true); },
             () =>
             {
                 _disabled++;
-                if (_disableSucceeds) File.Delete(NetworkIsolation.StatePath);
+                if (_disableSucceeds) File.Delete(_agent.Paths.SecureFile(NetworkIsolation.StateFileName));
                 return Task.FromResult(_disableSucceeds);
             },
-            bypass ?? new OfflineBypass(), _audit.Add, unlocked);
+            _agent.Machine.Kiosk, bypass ?? new OfflineBypass(), _audit.Add, unlocked);
 
         private static string ValidCode() =>
             Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(HwId + Secret + "2026-09-26"))).Substring(0, 6);
@@ -61,15 +57,15 @@ namespace POps.Tests.Agent
         {
             bool isolationWorks = false;
             var control = new QuarantineControl(
-                AgentHarness.FromStatics().Paths,
+                _agent.Paths,
                 _tray.Add,
                 () =>
                 {
-                    if (isolationWorks) File.WriteAllText(NetworkIsolation.StatePath, "{}");
+                    if (isolationWorks) File.WriteAllText(_agent.Paths.SecureFile(NetworkIsolation.StateFileName), "{}");
                     return Task.FromResult(isolationWorks);
                 },
                 () => Task.FromResult(true),
-                new OfflineBypass(), _audit.Add);
+                _agent.Machine.Kiosk, new OfflineBypass(), _audit.Add);
 
             Assert.False(await control.LockdownAsync("Sınav"));
             Assert.True(control.ScreenLocked);
@@ -197,7 +193,7 @@ namespace POps.Tests.Agent
         public void IsolationStateAloneMeansLocked()
         {
             // Eski sürümden kalan yalıtım (lockdown.json yok) da kilit sayılır
-            File.WriteAllText(NetworkIsolation.StatePath, "{}");
+            File.WriteAllText(_agent.Paths.SecureFile(NetworkIsolation.StateFileName), "{}");
             QuarantineControl control = Control();
             Assert.True(control.IsLocked);
             control.SyncTray();
@@ -208,7 +204,7 @@ namespace POps.Tests.Agent
         public async Task Unlock_ResetsDnsViolationCount()
         {
             // Worker'daki gibi: karantina kalkınca DNS izlemenin ihlal sayacı sıfırlanır
-            using DnsPolicyMonitor dns = AgentHarness.FromStatics().NewDnsMonitor(() => new[] { "x.bet.example" });
+            using DnsPolicyMonitor dns = _agent.NewDnsMonitor(() => new[] { "x.bet.example" });
             dns.Configure(new AgentPolicy
             {
                 DnsCategories = new List<string> { "bahis" },
@@ -254,7 +250,7 @@ namespace POps.Tests.Agent
         [Fact]
         public void BypassLockout_SurvivesRestart()
         {
-            string path = SecureStore.PathOf(OfflineBypass.StateFileName);
+            string path = _agent.Paths.SecureFile(OfflineBypass.StateFileName);
             DateTime now = new DateTime(2026, 9, 26, 12, 0, 0, DateTimeKind.Utc);
             var first = new OfflineBypass(() => now, path);
             for (int i = 0; i < OfflineBypass.MaxFailures - 1; i++) first.Attempt("000000", HwId, Secret, Day);
@@ -272,7 +268,7 @@ namespace POps.Tests.Agent
         [Fact]
         public void BypassFailures_SurviveRestart()
         {
-            string path = SecureStore.PathOf(OfflineBypass.StateFileName);
+            string path = _agent.Paths.SecureFile(OfflineBypass.StateFileName);
             var first = new OfflineBypass(statePath: path);
             first.Attempt("000000", HwId, Secret, Day);
             first.Attempt("000000", HwId, Secret, Day);
@@ -281,20 +277,21 @@ namespace POps.Tests.Agent
     }
 
     // HB: heartbeat karantina durumunu taşır; kilit/açma idempotenttir
-    [Collection(SharedStateCollection.Name)]
-    public class QuarantineHeartbeatTests : SharedStateTestBase
+    // Machine: Worker'ın eş önbelleği sunucusu (TcpListener) IL'den ulaşılabilir
+    [Collection(MachineCollection.Name)]
+    public class QuarantineHeartbeatTests : TestBase
     {
         private readonly List<string> _tray = new List<string>();
         private int _enabled, _disabled;
 
-        public QuarantineHeartbeatTests() => SecureStore.Dir = TestEnvironment.NewDir("hb");
+        private readonly AgentHarness _agent = AgentHarness.Create("hb");
 
         private QuarantineControl Control() => new QuarantineControl(
-            AgentHarness.FromStatics().Paths,
+            _agent.Paths,
             _tray.Add,
-            () => { _enabled++; File.WriteAllText(NetworkIsolation.StatePath, "{}"); return Task.FromResult(true); },
-            () => { _disabled++; File.Delete(NetworkIsolation.StatePath); return Task.FromResult(true); },
-            new OfflineBypass());
+            () => { _enabled++; File.WriteAllText(_agent.Paths.SecureFile(NetworkIsolation.StateFileName), "{}"); return Task.FromResult(true); },
+            () => { _disabled++; File.Delete(_agent.Paths.SecureFile(NetworkIsolation.StateFileName)); return Task.FromResult(true); },
+            _agent.Machine.Kiosk, new OfflineBypass());
 
         private static JsonElement Heartbeat(Worker worker) =>
             JsonDocument.Parse(JsonSerializer.Serialize(worker.HeartbeatPayload())).RootElement;
@@ -302,7 +299,7 @@ namespace POps.Tests.Agent
         [Fact]
         public void Heartbeat_ReportsTheLockState()
         {
-            using var worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context);
+            using var worker = new Worker(NullLogger<Worker>.Instance, _agent.Context);
             Assert.Equal(JsonValueKind.False, Heartbeat(worker).GetProperty("quarantined").ValueKind);
 
             File.WriteAllText(worker.Quarantine.LockPath, "{\"reason\":\"Sınav\"}");

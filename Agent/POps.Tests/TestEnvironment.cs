@@ -14,9 +14,6 @@ namespace POps.Tests
 
 #if !NETFRAMEWORK
         public static readonly string[] DefaultConfigPaths;
-        // Testlerin kullandığı veri ve güvenli klasörler (hep geçici klasörün içinde)
-        public static readonly string DefaultDataDir = Path.Combine(Root, "data-default");
-        public static readonly string DefaultSecureDir = Path.Combine(Root, "secure-default");
         // SYSTEM bileşenlerinin log klasörü (loglar yine LogDirectoryOverride'a gider; bu yalnızca yol olarak kullanılır)
         public static readonly string DefaultMachineLogDir = Path.Combine(Root, "machine-logs");
 #endif
@@ -35,18 +32,11 @@ namespace POps.Tests
             DefaultConfigPaths = POps.Shared.POpsHelpers.ConfigPaths.ToArray();
             POps.Shared.POpsHelpers.LogDirectoryOverride = Path.Combine(Root, "logs");
             POps.Shared.POpsHelpers.MachineLogDir = DefaultMachineLogDir;
+            // Bağlamı olmayan ayar okumaları (POpsHelpers'ın parametresiz biçimleri) gerçek C:\POps\appsettings.json'u okumaz
             POps.Shared.POpsHelpers.ConfigPaths = new string[0];
             POpsAgent.SecureStore.SystemSid = me;
-            POpsAgent.SecureStore.Dir = DefaultSecureDir;
-            POpsAgent.AgentUpdate.DataDir = DefaultDataDir;
-            // Gerçek kurulumda bu klasörler hep vardır; testler hangi sırayla çalışırsa çalışsın var olsunlar
-            // (ör. karantina kaydını yazan test, klasörü oluşturan başka bir testten önce çalışabilir)
-            Directory.CreateDirectory(DefaultSecureDir);
-            Directory.CreateDirectory(DefaultDataDir);
-            // Bütün test seam'leri süreç başında bir kez kurulur (karantina testleri gerçek Görev Yöneticisi / oturum
-            // politikalarına, güvenlik duvarına, güç API'sine dokunmaz ...). Paralel sınıflar EnsureIsolated çağırmaz ve
-            // statikleri değiştirmez: seri koleksiyonlar paralel sınıflardan sonra çalıştığı için bu değerleri görürler.
-            EnsureIsolated();
+            // Ajanın yolları, çalışma durumu ve makine kapıları her testin kendi bağlamındadır (bkz. AgentHarness): makineye
+            // dokunan her kapı orada reddeden sahtedir. Burada sıfırlanacak test seam'i kalmadı (Worker bölmesinin b3 adımı).
 #endif
         }
 
@@ -74,61 +64,6 @@ namespace POps.Tests
 
         public static string TestData(string name) => Path.Combine(AppContext.BaseDirectory, "TestData", name);
 
-#if !NETFRAMEWORK
-        // SharedState sınıflarında her testten önce: test seam'leri ve bellekteki ajan durumu test değerlerine geri alınır.
-        // Yollar ve çalışma durumu burada değildir: Worker ve kurduğu servisler onları AgentContext'ten alır (bkz.
-        // AgentHarness; sunucu modülleri her bağlamda yenidir); henüz statik kalan yolları (SecureStore.Dir,
-        // AgentUpdate.DataDir, ...) statik kurucu bir kez geçici klasörlere çevirir, testler yalnızca geçici klasörlere
-        // çevirir. Worker bölmesinin (b) adımları buradan satır siler; sonuncusundan (b3) sonra EnsureIsolated kalmaz.
-        public static void EnsureIsolated()
-        {
-            if (!(POpsAgent.KioskMode.Registry is FakeKioskRegistry)) POpsAgent.KioskMode.Registry = new FakeKioskRegistry();
-            // Güncelleme indirmeleri testlerde BITS'e gitmez (BITS testleri sahte çalıştırıcıyla açar)
-            POpsAgent.BitsDownload.Enabled = false;
-            IsolatePeerCache();
-            // Güvenlik duvarı betikleri ve sınav izin listesinin ad çözümü gerçek sisteme gitmez (ör. paylaşılan protokol
-            // vektörlerindeki exam_mode); bunları sınayan sınıflar kendi sahtelerini kurar
-            POpsAgent.NetworkIsolation.ScriptRunner = _ => System.Threading.Tasks.Task.FromResult((1, "testlerde güvenlik duvarına dokunulmaz"));
-            POpsAgent.ExamMode.Resolver = _ => System.Threading.Tasks.Task.FromResult(Array.Empty<System.Net.IPAddress>());
-            // Sınav modunun uygulama engeli bu bilgisayardaki gerçek süreçleri (cmd.exe, powershell.exe) kapatmaz
-            POpsAgent.ExamMode.StopProcess = _ => { };
-            // Testler gerçek winget'i asla çalıştırmaz (ör. paylaşılan protokol vektörlerindeki winget_install); gereken sınıf
-            // kendi sahtesini kurar
-            POpsAgent.WingetInstall.Locator = () => null;
-            IsolatePowerAndSessions();
-        }
-
-        // Testler bu makineyi asla kapatmaz, yeniden başlatmaz, oturumu kapatmaz ya da kilitlemez: gerçek güç API'sinin
-        // yerine her çağrıda hata veren sahte, oturum sorgularının yerine "kullanıcı yok" konur. Test kendi sahtesini
-        // koyar; bir sonraki test yeniden bu reddeden sahtelerle başlar.
-        public static readonly Func<POpsAgent.PowerOperation, int, bool> RefusingPowerApi =
-            (operation, taskId) => throw new InvalidOperationException($"Testte gerçek güç API'si çağrıldı ({operation}, görev {taskId}).");
-
-        public static void IsolatePowerAndSessions()
-        {
-            POpsAgent.PowerActions.Execute = RefusingPowerApi;
-            POpsAgent.PowerActions.TrayLockTimeout = TimeSpan.FromSeconds(5);
-            POpsAgent.SessionTasks.HasConsoleUser = () => false;
-            POpsAgent.SessionTasks.ConsoleSession = () => POps.Shared.UserSessionLauncher.NoSession;
-            POpsAgent.SessionTasks.Delay = System.Threading.Tasks.Task.Delay;
-            POpsAgent.UserMessages.AckTimeout = TimeSpan.FromMinutes(30);
-        }
-
-        // Eş önbelleği: önceki testin sunucusu kapanır; güvenlik duvarına asla dokunulmaz (betik reddedilir), sunucu
-        // yalnızca 127.0.0.1'de rastgele bir portta açılır (8817'de, bütün arabirimlerde değil); saat ve denetimler gerçek
-        private static void IsolatePeerCache()
-        {
-            POpsAgent.PeerCache.ResetState();
-            POpsAgent.PeerCache.FirewallRunner = _ => System.Threading.Tasks.Task.FromResult((1, "testlerde güvenlik duvarına dokunulmaz"));
-            POpsAgent.PeerCache.ListenEndpoint = () => new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, 0);
-            POpsAgent.PeerCache.Clock = () => DateTime.UtcNow;
-            POpsAgent.PeerCache.IsLocalSubnet = POpsAgent.PeerCache.InLocalSubnet;
-            POpsAgent.PeerCache.IsIsolated = POpsAgent.PeerCache.DefaultIsolated;
-            POpsAgent.PeerDownload.AllowLoopbackPeers = false;
-            POpsAgent.PeerDownload.HeaderTimeout = POpsAgent.PeerDownload.DefaultHeaderTimeout;
-            POpsAgent.PeerDownload.StallTimeout = POpsAgent.PeerDownload.DefaultStallTimeout;
-        }
-#endif
     }
 
     // Statik kurucunun her test sınıfından önce çalışmasını garanti eder. Paralel çalışan sınıfların tabanıdır: hiçbir
@@ -141,15 +76,11 @@ namespace POps.Tests
         }
     }
 
-    // SharedState koleksiyonunun tabanı: her testten önce yolları ve test seam'lerini test değerlerine geri alır. Bundan
-    // türeyen sınıf [Collection(SharedStateCollection.Name)] taşır; paralel bir sınıf bundan türemez (ParallelSafetyTests)
+    // SharedState koleksiyonunun tabanı: sınıfın süreç geneli bir değere (ortam değişkeni, ayar dosyaları, servis hesabı,
+    // kendi statik önbelleği, MSI custom action'larının güvenilir kökü) dokunduğunu gösterir. Worker bölmesinin b3 adımından
+    // beri her testten önce sıfırlanacak test seam'i yok. Bundan türeyen sınıf [Collection(SharedStateCollection.Name)]
+    // taşır; paralel bir sınıf bundan türemez (ParallelSafetyTests)
     public abstract class SharedStateTestBase : TestBase
     {
-        protected SharedStateTestBase()
-        {
-#if !NETFRAMEWORK
-            TestEnvironment.EnsureIsolated();
-#endif
-        }
     }
 }

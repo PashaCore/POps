@@ -27,11 +27,16 @@ namespace POpsAgent
             // siler. Yollar AgentContext ile Worker'a gider.
             bool generalize = Generalizer.IsRequested(args);
             (FolderSettings folders, AgentPaths paths) = AgentDirectories.Apply(secure: !generalize, configPaths: POpsHelpers.DefaultConfigPaths);
+            AgentDirectories.Use(paths);
+
+            // Gerçek makine (güvenlik duvarı, kayıt defteri, BITS, güç, winget, süreçler, updater, tepsi borusu): yalnızca burada
+            // kurulur ve AgentContext ile Worker'a gider (bkz. MachineSeams)
+            MachineSeams machine = MachineSeams.Production();
 
             // İmaj öncesi temizlik: servis durdurulur, cihaza özel dosyalar silinir (bkz. Generalizer; çıkış kodları orada)
             if (generalize)
             {
-                Environment.ExitCode = Generalizer.Run(args, Console.Out, paths);
+                Environment.ExitCode = Generalizer.Run(args, Console.Out, paths, machine.IsAdministrator, machine.StopAgent);
                 return;
             }
 
@@ -46,18 +51,19 @@ namespace POpsAgent
             POpsHelpers.Log("AGENT", $"POps Agent Başlatılıyor ({Worker.AppVersion})");
             AgentDirectories.LogChoice(folders);
 
-            // Worker'ın yolları ve çalışma durumu (bkz. AgentContext): her parçanın servis boyunca tek örneği. Statik kalan kodun
-            // süreç varsayılanları da bu örneklerdir. Güncelleme durumu tatbikat kararından önce gerekir.
+            // Worker'ın yolları, çalışma durumu ve makine kapıları (bkz. AgentContext): her parçanın servis boyunca tek örneği.
+            // Güncelleme durumu tatbikat kararından önce gerekir.
             var trust = new ServerTrust(paths.ServerCaPath);
             var credentials = new CredentialStore(paths);
+            var capabilities = new CapabilityState(paths.SecureFile(AgentCapabilities.FileName), trust);
             var context = new AgentContext(paths,
-                new CapabilityState(paths.SecureFile(AgentCapabilities.FileName), trust),
+                capabilities,
                 new ModuleState(),
                 credentials,
                 trust,
                 new AgentHttp(trust.NewHandler(), credentials),
-                new AgentUpdater(paths));
-            context.UseForProcess();
+                new AgentUpdater(paths, capabilities, machine),
+                machine);
 
             // Tatbikat kararı açılışın başında alınır; health.json ancak Worker çekirdek başlangıcını tamamlayınca yazılır.
             bool suppressOperationalHealth = context.Updater.ApplyRollbackDrillOnStartup();

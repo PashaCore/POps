@@ -18,8 +18,9 @@ namespace POps.Tests.Agent
     // göre geri çekilme, alma döngüsünün hataları ve doğrudan sokete yazılan mesajlar (önizleme, vision_rejected). Sunucu
     // 127.0.0.1'de sahtedir (FakeCommandServer); tepsi gerektiğinde gerçek boruya bağlanan sahte bir istemcidir.
     // Bağlantı döngüsü heartbeat'ten sonra 5 sn bekler: sunucunun kapattığını ancak o bekleme bitince görür.
-    [Collection(SharedStateCollection.Name)]
-    public class CommandConnectionTests : SharedStateTestBase, IDisposable
+    // Machine: gerçek tepsi borusu ve 127.0.0.1'de sahte sunucu açılır
+    [Collection(MachineCollection.Name)]
+    public class CommandConnectionTests : TestBase, IDisposable
     {
         private const string HwId = "HW-CONN00000001";
         private const string Secret = "connection-test-secret-0123456789";
@@ -28,25 +29,24 @@ namespace POps.Tests.Agent
 
         private readonly FakeCommandServer _server = new FakeCommandServer();
         private readonly CancellationTokenSource _stop = new CancellationTokenSource();
+        private readonly AgentHarness _agent;
         private readonly Worker _worker;
         private readonly long _logStart;
         private Task _loop;
 
         public CommandConnectionTests()
         {
-            SecureStore.Dir = TestEnvironment.NewDir("connection-secure");
-            AgentUpdate.DataDir = TestEnvironment.NewDir("connection-data");
-            TrayPipeServer.PipeName = "POpsTrayPipe-test-" + Guid.NewGuid().ToString("N").Substring(0, 8);
-            TrayPipeServer.ClientCheckOverride = _ => null;
             string config = Path.Combine(TestEnvironment.NewDir("connection-config"), "appsettings.json");
             File.WriteAllText(config, "{\"ServerUrl\":\"" + _server.Url + "\"}");
-            POpsHelpers.ConfigPaths = new[] { config };
+            // Tepsi borusu: kurulu servisle çakışmayan ad, sahte tepsi denetlenmeden kabul edilir
+            _agent = AgentHarness.Create("connection", machine: new MachineSeams { Kiosk = new FakeKioskRegistry(), TrayPipe = AgentHarness.TestTrayPipe() },
+                configPaths: new[] { config });
             // Cihaz secret'ı ve enroll jetonu: ikisi de başlık olarak gider
-            AgentCredentials.SaveSecret(Secret, HwId);
-            SecureStore.WriteProtected(SecureStore.PathOf(AgentCredentials.EnrollTokenFileName), EnrollToken);
-            AgentCapabilities.Load();   // dosya yok: varsayılanlar (Vision açık)
+            _agent.Credentials.SaveSecret(Secret, HwId);
+            SecureStore.WriteProtected(_agent.Paths.SecureFile(AgentCredentials.EnrollTokenFileName), EnrollToken);
+            _agent.Capabilities.Load();   // dosya yok: varsayılanlar (Vision açık)
             // DNS izleme bağlantı kurulunca başlar: gerçek DNS önbelleği okunmaz
-            _worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context, () => Array.Empty<string>()) { HwId = HwId };
+            _worker = new Worker(NullLogger<Worker>.Instance, _agent.Context, () => Array.Empty<string>()) { HwId = HwId };
             _logStart = LogLength();
         }
 
@@ -58,13 +58,11 @@ namespace POps.Tests.Agent
             _worker.Dispose();
             _server.Dispose();
             _stop.Dispose();
-            POpsHelpers.ConfigPaths = new string[0];
-            TrayPipeServer.PipeName = "POpsTrayPipe";
-            TrayPipeServer.ClientCheckOverride = null;
-            SecureStore.Dir = TestEnvironment.DefaultSecureDir;
-            AgentUpdate.DataDir = TestEnvironment.DefaultDataDir;
-            AgentCapabilities.Load();
+            _agent.Dispose();
         }
+
+        // X-Agent-Features: bu bağlamın yetenek durumundan (Worker'ın bağlantısı da öyle üretir)
+        private AgentFeatures AgentFeatures => new AgentFeatures(_agent.Capabilities);
 
         // Bağlantı döngüsü başlar; ajanın ilk bağlantısı
         private async Task<FakeCommandServer.Connection> StartAsync()
@@ -214,7 +212,7 @@ namespace POps.Tests.Agent
         {
             FakeCommandServer.Connection connection = await StartAsync();
             await ExpectFirstMessagesAsync(connection);
-            using FakeTray tray = await FakeTray.ConnectAsync(TrayPipeServer.PipeName);
+            using FakeTray tray = await FakeTray.ConnectAsync(_agent.Machine.TrayPipe.Name);
 
             await tray.SendAsync("REJECT_VISION_TUNNEL:SES-5D2C9A1B7E30");
             JsonElement rejected = await connection.NextAsync(Wait);
@@ -230,7 +228,7 @@ namespace POps.Tests.Agent
             FakeCommandServer.Connection connection = await StartAsync();
             await ExpectFirstMessagesAsync(connection);
             byte[] jpeg = { 0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0xFF, 0xD9 };
-            using FakeTray tray = await FakeTray.ConnectAsync(TrayPipeServer.PipeName);
+            using FakeTray tray = await FakeTray.ConnectAsync(_agent.Machine.TrayPipe.Name);
             tray.OnMessage = message => message == "CAPTURE_SNAPSHOT" ? tray.SendFrameAsync(jpeg) : Task.CompletedTask;
             Assert.True(await FakeTray.WaitUntilAsync(() => _worker.TrayPipe.IsConnected));
 

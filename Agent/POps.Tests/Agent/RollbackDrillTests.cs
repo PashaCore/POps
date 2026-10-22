@@ -18,7 +18,7 @@ namespace POps.Tests.Agent
         public void Dispose() => _agent.Dispose();
 
         // Servisin açılışı: bu klasörlerde, _installedVersion sürümüyle
-        private bool ApplyRollbackDrillOnStartup() => new AgentUpdater(_agent.Paths, _installedVersion).ApplyRollbackDrillOnStartup();
+        private bool ApplyRollbackDrillOnStartup() => _agent.NewUpdater(_installedVersion).ApplyRollbackDrillOnStartup();
 
         private static AgentUpdate.UpdateRun Run(string to, long startedAt) => new AgentUpdate.UpdateRun { ToVersion = to, StartedAt = startedAt };
         private static AgentUpdate.ConsumedDrill Consumed(string version, long startedAt) => new AgentUpdate.ConsumedDrill { Version = version, UpdateStartedAt = startedAt };
@@ -173,7 +173,7 @@ namespace POps.Tests.Agent
         public void Dispose() => _agent.Dispose();
 
         // Servisin açılışı: bu klasörlerde, _installedVersion sürümüyle
-        private bool ApplyRollbackDrillOnStartup() => new AgentUpdater(_agent.Paths, _installedVersion).ApplyRollbackDrillOnStartup();
+        private bool ApplyRollbackDrillOnStartup() => _agent.NewUpdater(_installedVersion).ApplyRollbackDrillOnStartup();
 
         // L4: çökmüş bir updater'dan kalan eski kilit "güncelleme var" sayılmaz; işaret tüketilmez
         [Fact]

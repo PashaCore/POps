@@ -9,9 +9,9 @@ using System.Threading.Tasks;
 
 namespace POpsAgent
 {
-    // Uzaktan güç işlemleri (power) ve kullanıcı mesajlarının (user_message) ortak kuralları: oturum denetimi, metin
-    // temizliği, alan okuma ve "kullanıcı yok" sonucu. Makineye dokunan her şey (oturum sorgusu, bekleme) burada
-    // değiştirilebilir bir giriştir; testler sahtelerini koyar (bkz. POps.Tests TestEnvironment.EnsureIsolated).
+    // Uzaktan güç işlemleri (power) ve kullanıcı mesajlarının (user_message) ortak kuralları: metin temizliği, alan okuma
+    // ve "kullanıcı yok" sonucu. Makineye dokunan oturum sorguları makine kapılarıdır (MachineSeams.HasConsoleUser,
+    // ConsoleSession; servis: aşağıdaki gerçek sorgu), bekleme PowerActions ve UserMessages'ın girişidir.
     // Alanlar sunucunun şemalarına göre okunur (docs/protocol/server-to-agent/power.json, user_message.json).
     [SupportedOSPlatform("windows")]
     public static class SessionTasks
@@ -23,16 +23,8 @@ namespace POpsAgent
         public const string NoUserOutput = "[REDDEDİLDİ] oturum açık kullanıcı yok";
 
         // Etkin konsol oturumunda (fiziksel ekran) oturum açmış kullanıcı var mı. Yalnızca SYSTEM'de doğru yanıt verir
-        // (WTSQueryUserToken); başka hesapta hep false.
-        internal static Func<bool> HasConsoleUser { get; set; } = ConsoleUserPresent;
-
-        // Etkin konsol oturumunun kimliği (kilitleme: tepsi bu oturumda mı)
-        internal static Func<uint> ConsoleSession { get; set; } = UserSessionLauncher.ActiveConsoleSession;
-
-        // Geri sayım ve okundu onayı beklemesi
-        internal static Func<TimeSpan, CancellationToken, Task> Delay { get; set; } = Task.Delay;
-
-        private static bool ConsoleUserPresent() => UserSessionLauncher.HasSignedInUser(UserSessionLauncher.ActiveConsoleSession());
+        // (WTSQueryUserToken); başka hesapta hep false. Servisin sorgusu (yalnızca MachineSeams.Production kurar).
+        internal static bool ConsoleUserPresent() => UserSessionLauncher.HasSignedInUser(UserSessionLauncher.ActiveConsoleSession());
 
         // task_id: 1 ya da daha büyük bir tamsayı. Yoksa sonuç bildirilemez; çağıran mesajı yok sayar.
         public static int? TaskId(JsonElement root) =>

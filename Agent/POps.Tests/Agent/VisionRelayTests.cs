@@ -13,8 +13,9 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // Vision v2, servis: ikili karelerin iletilmesi ve geri basınç, görüntüleyici denetimi, pano
-    [Collection(SharedStateCollection.Name)]
-    public class VisionRelayTests : SharedStateTestBase
+    // Machine: Worker'ın eş önbelleği sunucusu (TcpListener) IL'den ulaşılabilir
+    [Collection(MachineCollection.Name)]
+    public class VisionRelayTests : TestBase
     {
         private static readonly byte[] Jpeg = { 0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10 };
         private readonly List<byte[]> _binary = new List<byte[]>();
@@ -176,7 +177,7 @@ namespace POps.Tests.Agent
         public void StartCapture_PicksTheProtocolFromServerInfo(bool binary, string expected)
         {
             var tray = new List<string>();
-            using var worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context) { TrayOverride = tray.Add, SendOverride = _ => Task.FromResult(true) };
+            using var worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.Create().Context) { TrayOverride = tray.Add, SendOverride = _ => Task.FromResult(true) };
             worker.OnCommandSocketOpened();
             worker.Handshake.OnServerInfo(Json(binary ? "{\"action\":\"server_info\",\"features\":[\"vision_binary\"]}" : "{\"action\":\"server_info\",\"features\":[]}"));
             worker.StartCapture(4);
@@ -189,7 +190,7 @@ namespace POps.Tests.Agent
         {
             var sent = new List<JsonElement>();
             var tray = new List<string>();
-            using var worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context)
+            using var worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.Create().Context)
             {
                 HwId = "HW-V2",
                 TrayOverride = tray.Add,

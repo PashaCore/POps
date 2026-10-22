@@ -30,9 +30,10 @@ namespace POpsAgent
     //  * file_pull (PC -> yönetici; gerekçe zorunlu): C:\POpsData\secure içinden hiçbir şey, başka kullanıcıların
     //    profilinden yalnızca any_profile ile, max_size'dan büyük dosya asla. Denetim dosyanın gerçek yoluna
     //    (bağlantılar çözülmüş) yapılır; cihaz anahtarı başlıklarıyla yüklenir.
-    // Her işlem PC kullanıcısına tepsiden söylenir ve yerel denetim kaydına yazılır.
+    // Her işlem PC kullanıcısına tepsiden söylenir ve yerel denetim kaydına yazılır. Worker'ın örneği dosya aktarımı
+    // işleyicisindedir (bkz. FileTransferHandler).
     [SupportedOSPlatform("windows")]
-    public static class FileTransfer
+    public sealed class FileTransfer
     {
         public const long MaxBytes = 1024L * 1024 * 1024;
         // Sunucu şeması: name en çok 200, reason 3-300, path en çok 1024 karakter
@@ -70,13 +71,31 @@ namespace POpsAgent
             public bool AnyProfile { get; init; }
         }
 
-        // Testler: yollar ve kullanıcının profili
-        internal static Func<string>? PublicDesktopOverride { get; set; }
-        internal static Func<(string ProfilesDirectory, string? CurrentProfile)> ProfileInfo { get; set; } = ReadProfiles;
+        private readonly string _secureDir;
+        private readonly AgentHttp _http;
+        private readonly CredentialStore _credentials;
+        private readonly Func<string> _publicDesktop;
 
-        public static string PublicDesktop => PublicDesktopOverride?.Invoke() ?? Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory);
-        // <veri klasörü>\inbox (AgentPaths.InboxDir); Worker bölmesinin b3 adımı yolu AgentPaths'ten verir
-        public static string InboxRoot => System.IO.Path.Combine(AgentUpdate.DataDir, AgentPaths.InboxFolder);
+        // paths: gelen kutusu (<veri klasörü>\inbox) ve güvenli depo (geçici dosya; çekilemez); http, credentials: bağlamın HTTP
+        // istemcisi ve cihaz anahtarı başlıkları; publicDesktop, profiles: ortak masaüstü ve kullanıcı profilleri (servis:
+        // Windows, bkz. MachineSeams; testlerde geçici klasörler)
+        public FileTransfer(AgentPaths paths, AgentHttp http, CredentialStore credentials, Func<string> publicDesktop,
+            Func<(string ProfilesDirectory, string? CurrentProfile)> profiles)
+        {
+            ArgumentNullException.ThrowIfNull(paths);
+            _secureDir = paths.SecureDir;
+            InboxRoot = paths.InboxDir;
+            _http = http ?? throw new ArgumentNullException(nameof(http));
+            _credentials = credentials ?? throw new ArgumentNullException(nameof(credentials));
+            _publicDesktop = publicDesktop ?? throw new ArgumentNullException(nameof(publicDesktop));
+            ProfileInfo = profiles ?? throw new ArgumentNullException(nameof(profiles));
+        }
+
+        public string PublicDesktop => _publicDesktop();
+        // <veri klasörü>\inbox (AgentPaths.InboxDir)
+        public string InboxRoot { get; }
+        // Profil kökü ve konsoldaki kullanıcının profili (her çekmede sorulur)
+        internal Func<(string ProfilesDirectory, string? CurrentProfile)> ProfileInfo { get; }
 
         // Geçersiz ya da eksik kimlik: null (sunucu bilmediği aktarımın sonucunu yok sayar; böyle emre file_result gitmez)
         public static string? TransferIdOf(JsonElement command) =>
@@ -213,17 +232,17 @@ namespace POpsAgent
         }
 
         // Dönen: (sonuç, yol, açıklama); sonuç "done" | "rejected" | "failed"
-        public static async Task<(string Outcome, string? Path, string? Detail)> PushAsync(PushRequest request, string hwId, DateTime localNow, CancellationToken token)
+        public async Task<(string Outcome, string? Path, string? Detail)> PushAsync(PushRequest request, string hwId, DateTime localNow, CancellationToken token)
         {
             string destination = request.Dest == "public_desktop" ? PublicDesktop : InboxFor(localNow);
             if (string.IsNullOrEmpty(destination) || !Directory.Exists(destination)) return ("failed", null, "hedef klasör yok");
-            string partial = SecureStore.PathOf($"transfer-{request.TransferId}.part");
+            string partial = System.IO.Path.Combine(_secureDir, $"transfer-{request.TransferId}.part");
             try
             {
-                SecureStore.EnsureDirectory();
+                SecureStore.EnsureDirectory(_secureDir);
                 using var message = new HttpRequestMessage(HttpMethod.Get, request.Url);
-                AgentCredentials.AddHttpAuth(message, hwId);
-                using HttpResponseMessage response = await AgentHttp.Default.Client.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, token);
+                _credentials.AddHttpAuth(message, hwId);
+                using HttpResponseMessage response = await _http.Client.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, token);
                 if (!response.IsSuccessStatusCode) return ("failed", null, $"indirilemedi: HTTP {(int)response.StatusCode}");
                 using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
                 long total = 0;
@@ -254,7 +273,7 @@ namespace POpsAgent
             finally { TryDelete(partial); }
         }
 
-        public static async Task<(string Outcome, string? Path, string? Detail, long Size)> PullAsync(PullRequest request, string hwId, CancellationToken token)
+        public async Task<(string Outcome, string? Path, string? Detail, long Size)> PullAsync(PullRequest request, string hwId, CancellationToken token)
         {
             FileStream file;
             try { file = new FileStream(request.Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete); }
@@ -263,7 +282,7 @@ namespace POpsAgent
             {
                 string finalPath = FinalPath(file.SafeFileHandle) ?? System.IO.Path.GetFullPath(request.Path);
                 var (profiles, current) = ProfileInfo();
-                string? refusal = CheckPullPath(finalPath, SecureStore.Dir, profiles, current, request.AnyProfile);
+                string? refusal = CheckPullPath(finalPath, _secureDir, profiles, current, request.AnyProfile);
                 if (refusal != null) return ("rejected", finalPath, refusal, 0);
                 long size = file.Length;
                 if (size > request.MaxSize) return ("rejected", finalPath, $"dosya max_size'dan büyük ({size} bayt)", size);
@@ -272,8 +291,8 @@ namespace POpsAgent
                     using var message = new HttpRequestMessage(HttpMethod.Post, request.Upload) { Content = new StreamContent(file, 81920) };
                     message.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
                     message.Content.Headers.ContentLength = size;
-                    AgentCredentials.AddHttpAuth(message, hwId);
-                    using HttpResponseMessage response = await AgentHttp.Default.Client.SendAsync(message, token);
+                    _credentials.AddHttpAuth(message, hwId);
+                    using HttpResponseMessage response = await _http.Client.SendAsync(message, token);
                     return response.IsSuccessStatusCode
                         ? ("done", finalPath, null, size)
                         : ("failed", finalPath, $"yüklenemedi: HTTP {(int)response.StatusCode}", size);
@@ -286,7 +305,7 @@ namespace POpsAgent
         }
 
         // C:\POpsData\inbox\<yyyy-MM-dd>: Users okur, SYSTEM/Administrators tam (devralma yok)
-        internal static string InboxFor(DateTime localNow)
+        internal string InboxFor(DateTime localNow)
         {
             string dir = System.IO.Path.Combine(InboxRoot, localNow.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
             var inherit = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
@@ -331,7 +350,7 @@ namespace POpsAgent
         }
 
         // Profil kökü (ProfileList\ProfilesDirectory) ve konsoldaki kullanıcının profili (yoksa null)
-        private static (string, string?) ReadProfiles()
+        internal static (string ProfilesDirectory, string? CurrentProfile) ReadProfiles()
         {
             using RegistryKey? list = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList");
             string profiles = Environment.ExpandEnvironmentVariables(list?.GetValue("ProfilesDirectory") as string ?? @"%SystemDrive%\Users");

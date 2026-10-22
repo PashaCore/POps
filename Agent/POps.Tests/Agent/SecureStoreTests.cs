@@ -12,11 +12,11 @@ namespace POps.Tests.Agent
         [Fact]
         public void Directory_IsProtectedAndReappliedOnEveryStart()
         {
-            SecureStore.Dir = Path.Combine(TestEnvironment.NewDir("sec"), "secure");
-            SecureStore.EnsureDirectory();
-            Assert.True(SecureStore.IsLockedDown(new DirectoryInfo(SecureStore.Dir).GetAccessControl()));
-            SecureStore.EnsureDirectory();
-            Assert.True(SecureStore.IsLockedDown(new DirectoryInfo(SecureStore.Dir).GetAccessControl()));
+            string dir = Path.Combine(TestEnvironment.NewDir("sec"), "secure");
+            SecureStore.EnsureDirectory(dir);
+            Assert.True(SecureStore.IsLockedDown(new DirectoryInfo(dir).GetAccessControl()));
+            SecureStore.EnsureDirectory(dir);
+            Assert.True(SecureStore.IsLockedDown(new DirectoryInfo(dir).GetAccessControl()));
         }
 
         [Fact]

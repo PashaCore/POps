@@ -80,22 +80,25 @@ namespace POpsAgent
         // Çıktı satır sonu beklemeden bu boyutta parçalarla okunur
         internal const int ReadChunkChars = 8192;
         // İşlem bittikten sonra çıktı akışlarının kapanması için en çok beklenen süre (akışı açık tutan alt süreç sonucu bekletmesin)
-        internal static TimeSpan StreamDrainTimeout { get; set; } = TimeSpan.FromSeconds(10);
+        internal static readonly TimeSpan DefaultStreamDrainTimeout = TimeSpan.FromSeconds(10);
 
         private readonly ConcurrentDictionary<int, CancellationTokenSource> _running = new ConcurrentDictionary<int, CancellationTokenSource>();
         private readonly string _shell;
         private readonly Func<string, string> _arguments;
         private readonly TimeSpan _maxDuration;
         private readonly string _taskDirectory;
+        private TimeSpan StreamDrainTimeout { get; }
 
-        // shell/arguments/maxDuration/taskDirectory yalnızca testler içindir; ajan cmd.exe ve Path.GetTempPath() altında
-        // bir .bat dosyası kullanır (testler görev dosyalarını kendi geçici klasörlerine yazar)
-        public CommandRunner(string shell = null, Func<string, string> arguments = null, TimeSpan? maxDuration = null, string taskDirectory = null)
+        // shell/arguments/maxDuration/streamDrainTimeout yalnızca testler içindir; ajan cmd.exe ve görev klasörü altında bir .bat
+        // dosyası kullanır. taskDirectory: görev dosyalarının klasörü (Worker: AgentPaths.TaskDir; null: Path.GetTempPath())
+        public CommandRunner(string shell = null, Func<string, string> arguments = null, TimeSpan? maxDuration = null, string taskDirectory = null,
+            TimeSpan? streamDrainTimeout = null)
         {
             _shell = shell ?? "cmd.exe";
             _arguments = arguments ?? (bat => $"/c \"{bat}\"");
             _maxDuration = maxDuration ?? CommandExecutionPolicy.MaxDuration;
             _taskDirectory = taskDirectory;
+            StreamDrainTimeout = streamDrainTimeout ?? DefaultStreamDrainTimeout;
         }
 
         // Görev dosyalarının klasörü; verilmediyse her okumada Path.GetTempPath()
@@ -275,7 +278,7 @@ namespace POpsAgent
         }
 
         // İşlem bitti: akışların sonuna kadar okunması beklenir, ama akışı açık tutan bir alt süreç sonucu bekletemez
-        private static async Task DrainAsync(Task pumps, int taskId)
+        private async Task DrainAsync(Task pumps, int taskId)
         {
             try { await pumps.WaitAsync(StreamDrainTimeout); }
             catch (TimeoutException)

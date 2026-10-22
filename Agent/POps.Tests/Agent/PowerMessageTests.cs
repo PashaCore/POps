@@ -14,11 +14,12 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // Uzaktan güç işlemleri (power) ve kullanıcı mesajları (user_message). Makineye dokunan her şey sahtedir: güç API'si
-    // (PowerActions.Execute) yalnızca çağrıyı kaydeder, oturum sorgusu (SessionTasks.HasConsoleUser) testin değeridir,
-    // bekleme (SessionTasks.Delay) anında ya da test bırakınca biter, tepsi borusu TrayOverride'dır. Bu testler bilgisayarı
-    // asla kapatmaz, yeniden başlatmaz, oturumu kapatmaz ya da kilitlemez.
-    [Collection(SharedStateCollection.Name)]
-    public class PowerMessageTests : SharedStateTestBase, IDisposable
+    // (makine kapısı MachineSeams.Power) yalnızca çağrıyı kaydeder, oturum sorgusu (MachineSeams.HasConsoleUser) testin
+    // değeridir, bekleme (PowerActions.Delay, UserMessages.Delay) anında ya da test bırakınca biter, tepsi borusu
+    // TrayOverride'dır. Bu testler bilgisayarı asla kapatmaz, yeniden başlatmaz, oturumu kapatmaz ya da kilitlemez.
+    // Machine: Worker'ın eş önbelleği sunucusu (TcpListener) IL'den ulaşılabilir
+    [Collection(MachineCollection.Name)]
+    public class PowerMessageTests : TestBase, IDisposable
     {
         private readonly Worker _worker;
         private readonly List<JsonElement> _sent = new List<JsonElement>();
@@ -34,12 +35,20 @@ namespace POps.Tests.Agent
         private bool _trayConnected = true;
         private bool _trayInConsole;
 
+        // Testin ajanı: güç API'si _power, konsoldaki kullanıcı _consoleUser (makine kapıları)
+        private readonly AgentHarness _agent;
+        private Func<PowerOperation, int, bool> _power;
+
         public PowerMessageTests()
         {
-            SecureStore.Dir = TestEnvironment.NewDir("power-secure");
-            AgentUpdate.DataDir = TestEnvironment.NewDir("power-data");
-            AgentCapabilities.Load();   // dosya yok: hepsi açık
-            _worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context)
+            _agent = AgentHarness.Create("power", machine: new MachineSeams
+            {
+                Kiosk = new FakeKioskRegistry(),
+                Power = (operation, taskId) => _power(operation, taskId),
+                HasConsoleUser = () => _consoleUser,
+            });
+            _agent.Capabilities.Load();   // dosya yok: hepsi açık
+            _worker = new Worker(NullLogger<Worker>.Instance, _agent.Context)
             {
                 HwId = "HW-TEST",
                 SendOverride = payload =>
@@ -63,7 +72,7 @@ namespace POps.Tests.Agent
             };
             _worker.Power.Audit = Record;
             _worker.Messages.Audit = Record;
-            PowerActions.Execute = (operation, taskId) =>
+            _power = (operation, taskId) =>
             {
                 lock (_timeline)
                 {
@@ -72,7 +81,6 @@ namespace POps.Tests.Agent
                 }
                 return true;
             };
-            SessionTasks.HasConsoleUser = () => _consoleUser;
             UseInstantDelay();
         }
 
@@ -80,9 +88,7 @@ namespace POps.Tests.Agent
         public void Dispose()
         {
             _worker.Dispose();
-            SecureStore.Dir = TestEnvironment.NewDir("power-reset");
-            AgentCapabilities.Load();
-            TestEnvironment.IsolatePowerAndSessions();
+            _agent.Dispose();
         }
 
         private void Record(LocalAuditEvent item)
@@ -90,18 +96,28 @@ namespace POps.Tests.Agent
             lock (_timeline) _audit.Add(item);
         }
 
-        private void UseInstantDelay() => SessionTasks.Delay = (time, token) =>
+        // Geri sayım ve okundu onayı beklemesi (güç işlemleri ve kullanıcı mesajları aynı bekleme girişini kullanır)
+        private void UseDelay(Func<TimeSpan, CancellationToken, Task> delay)
+        {
+            _worker.Power.Delay = delay;
+            _worker.Messages.Delay = delay;
+        }
+
+        private void UseInstantDelay() => UseDelay((time, token) =>
         {
             lock (_delays) _delays.Add(time);
             return Task.CompletedTask;
-        };
+        });
 
         // Bekleme test _release'i tamamlayana (ya da iptal edilene) kadar sürer
-        private void UseManualDelay() => SessionTasks.Delay = (time, token) =>
+        private void UseManualDelay() => UseDelay((time, token) =>
         {
             lock (_delays) _delays.Add(time);
             return _release.Task.WaitAsync(token);
-        };
+        });
+
+        // X-Agent-Features: bu bağlamın yetenek durumundan (bkz. CommandConnection)
+        private AgentFeatures AgentFeatures => new AgentFeatures(_agent.Capabilities);
 
         private Task Handle(string json) => _worker.HandleServerMessageAsync(json, null, CancellationToken.None);
 
@@ -155,10 +171,10 @@ namespace POps.Tests.Agent
         private static JsonElement Decode(string trayMessage, string prefix) =>
             JsonDocument.Parse(Convert.FromBase64String(trayMessage.Substring(prefix.Length))).RootElement.Clone();
 
-        private static void WriteCapabilities(string json)
+        private void WriteCapabilities(string json)
         {
-            File.WriteAllText(SecureStore.PathOf(AgentCapabilities.FileName), json);
-            AgentCapabilities.Load();
+            File.WriteAllText(_agent.Paths.SecureFile(AgentCapabilities.FileName), json);
+            _agent.Capabilities.Load();
         }
 
         private static string Power(int taskId, string op, int delay = 0, string extra = "") =>
@@ -391,9 +407,9 @@ namespace POps.Tests.Agent
         public async Task SetCapabilities_SwitchesPowerAndMessageOff_AndReportsIt()
         {
             await Handle("{\"action\":\"set_capabilities\",\"power_enabled\":false,\"message_enabled\":false}");
-            Assert.False(AgentCapabilities.PowerEnabled);
-            Assert.False(AgentCapabilities.MessageEnabled);
-            Assert.True(AgentCapabilities.TerminalEnabled);
+            Assert.False(_agent.Capabilities.PowerEnabled);
+            Assert.False(_agent.Capabilities.MessageEnabled);
+            Assert.True(_agent.Capabilities.TerminalEnabled);
             // capabilities mesajı bugünkü ajanın örneğiyle (capabilities.files.json) aynı alanları taşır
             JsonElement status = Sent("capabilities").Last();
             JsonElement example = JsonDocument.Parse(File.ReadAllText(Path.Combine(TestEnvironment.RepoRoot(), "docs", "protocol", "examples", "agent-to-server", "capabilities.files.json"))).RootElement;
@@ -405,10 +421,10 @@ namespace POps.Tests.Agent
 
             // Sunucu yeniden açamaz; kapatma diske yazıldı
             await Handle("{\"action\":\"set_capabilities\",\"power_enabled\":true}");
-            Assert.False(AgentCapabilities.PowerEnabled);
-            AgentCapabilities.Load();
-            Assert.False(AgentCapabilities.PowerEnabled);
-            Assert.False(AgentCapabilities.MessageEnabled);
+            Assert.False(_agent.Capabilities.PowerEnabled);
+            _agent.Capabilities.Load();
+            Assert.False(_agent.Capabilities.PowerEnabled);
+            Assert.False(_agent.Capabilities.MessageEnabled);
         }
 
         [Fact]
@@ -429,13 +445,13 @@ namespace POps.Tests.Agent
         public void CapabilitiesFile_FromBeforePowerAndMessage_KeepsThemOn()
         {
             WriteCapabilities("{\"terminal_enabled\":false,\"vision_enabled\":true,\"source\":\"msi\"}");
-            Assert.True(AgentCapabilities.PowerEnabled);
-            Assert.True(AgentCapabilities.MessageEnabled);
-            Assert.False(AgentCapabilities.TerminalEnabled);
+            Assert.True(_agent.Capabilities.PowerEnabled);
+            Assert.True(_agent.Capabilities.MessageEnabled);
+            Assert.False(_agent.Capabilities.TerminalEnabled);
 
             WriteCapabilities("{ bozuk");
-            Assert.False(AgentCapabilities.PowerEnabled);
-            Assert.False(AgentCapabilities.MessageEnabled);
+            Assert.False(_agent.Capabilities.PowerEnabled);
+            Assert.False(_agent.Capabilities.MessageEnabled);
         }
 
         // ------------------------------------------------------------------ oturum açık kullanıcı yok
@@ -582,7 +598,7 @@ namespace POps.Tests.Agent
         [Fact]
         public async Task Power_NewerRequest_ReplacesTheRunningCountdown()
         {
-            SessionTasks.Delay = (time, token) => time == TimeSpan.Zero ? Task.CompletedTask : Task.Delay(Timeout.Infinite, token);
+            UseDelay((time, token) => time == TimeSpan.Zero ? Task.CompletedTask : Task.Delay(Timeout.Infinite, token));
             await Handle(Power(45, "restart", 300));
             await Handle(Power(46, "shutdown", 0));
 
@@ -640,8 +656,8 @@ namespace POps.Tests.Agent
         [Fact]
         public async Task Power_ActionThatFails_IsLoggedAndTheResultStays()
         {
-            TestEnvironment.IsolatePowerAndSessions();   // gerçek API yerine hata veren sahte
-            SessionTasks.HasConsoleUser = () => true;
+            _power = new MachineSeams().Power;   // gerçek API yerine hata veren sahte (makine kapısının varsayılanı)
+            _consoleUser = true;
             await Handle(Power(50, "restart"));
             await WaitUntilPowerIdle();
             Assert.Equal(0, Assert.Single(Results(50)).GetProperty("exit_code").GetInt32());
@@ -683,7 +699,7 @@ namespace POps.Tests.Agent
         public async Task Power_Lock_FallsBackToTheServiceWhenTheTrayDoesNotAnswer()
         {
             _trayInConsole = true;
-            PowerActions.TrayLockTimeout = TimeSpan.FromMilliseconds(50);
+            _worker.Power.TrayLockTimeout = TimeSpan.FromMilliseconds(50);
             await Handle(Power(53, "lock"));
             await WaitUntilPowerIdle();
             Assert.Single(Tray(PowerActions.LockPrefix));
@@ -753,7 +769,7 @@ namespace POps.Tests.Agent
             await Handle(Message(63, "Lütfen okuyun: gizli-metin-63", true));
             Assert.True(Decode(Assert.Single(Tray(UserMessages.ShowPrefix)), UserMessages.ShowPrefix).GetProperty("requires_ack").GetBoolean());
             await WaitFor(() => Delays().Count == 1, "Onay beklemesi başlamadı");
-            Assert.Equal(UserMessages.AckTimeout, Assert.Single(Delays()));
+            Assert.Equal(_worker.Messages.AckTimeout, Assert.Single(Delays()));
             Assert.Empty(Results(63));   // sonuç tek: okundu ya da onaylanmadı
 
             Assert.True(await _worker.OnTrayReplyAsync(UserMessages.AckPrefix + "63"));
@@ -773,7 +789,7 @@ namespace POps.Tests.Agent
         [Fact]
         public async Task UserMessage_NotAcknowledgedInTime_ReportsShownNotAcknowledged()
         {
-            UserMessages.AckTimeout = TimeSpan.FromMinutes(30);
+            _worker.Messages.AckTimeout = TimeSpan.FromMinutes(30);
             await Handle(Message(64, "Okundu onayı istenen mesaj", true));
             JsonElement result = await WaitForResult(64);
             Assert.Equal(0, result.GetProperty("exit_code").GetInt32());

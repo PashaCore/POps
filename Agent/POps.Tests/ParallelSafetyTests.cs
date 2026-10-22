@@ -38,8 +38,8 @@ namespace POps.Tests
                 .Select(a => (string)a.ConstructorArguments[0].Value)
                 .SingleOrDefault();
 
-        // SharedStateTestBase'in kurucusu (EnsureIsolated) sınıfın kendi erişimi sayılmaz: o kurucu yalnızca SharedState'te
-        // çalışır (SharedStateBase_AndCollection_GoTogether)
+        // SharedStateTestBase'in kurucusu sınıfın kendi erişimi sayılmaz: o kurucu yalnızca SharedState'te çalışır
+        // (SharedStateBase_AndCollection_GoTogether; Worker bölmesinin b3 adımından beri hiçbir şey yapmaz)
         private static List<StaticAccessScanner.Finding> Scan(Type type) =>
             StaticAccessScanner.Scan(type, method => method.DeclaringType == typeof(SharedStateTestBase));
 
@@ -74,8 +74,8 @@ namespace POps.Tests
                 "[Collection(MachineCollection.Name)] ile işaretleyin (statiğe de dokunuyorsa SharedState):" + Environment.NewLine + Report(findings));
         }
 
-        // EnsureIsolated yalnızca SharedState'te çalışır: SharedStateTestBase'ten türeyen her sınıf o koleksiyonda, o
-        // koleksiyondaki her sınıf ondan türer; başka koleksiyon adı kullanılmaz
+        // SharedStateTestBase'ten türeyen her sınıf SharedState koleksiyonunda, o koleksiyondaki her sınıf ondan türer; başka
+        // koleksiyon adı kullanılmaz
         [Fact]
         public void SharedStateBase_AndCollection_GoTogether()
         {
@@ -139,12 +139,14 @@ namespace POps.Tests
 
         public static Func<string> ReadsInALambda() => () => POps.Installer.Setup.TrustedBaseForTests;
 #else
-        public const string Seam = "SecureStore.Dir";
-        public const string ReadInLambda = "AgentUpdate.DataDir";
+        // Süreç geneli kalan iki değer: servis hesabı (SecureStoreTests değiştirir) ve parametresiz ayar okumalarının dosyaları
+        // (ConfigProblemTests, POpsHelpersTests değiştirir)
+        public const string Seam = "SecureStore.SystemSid";
+        public const string ReadInLambda = "POpsHelpers.ConfigPaths";
 
-        public static void WritesASeam() => POpsAgent.SecureStore.Dir = null;
+        public static void WritesASeam() => POpsAgent.SecureStore.SystemSid = null;
 
-        public static Func<string> ReadsInALambda() => () => POpsAgent.AgentUpdate.DataDir;
+        public static Func<IReadOnlyList<string>> ReadsInALambda() => () => POps.Shared.POpsHelpers.ConfigPaths;
 
         // AgentDirectories.Use, SYSTEM bileşenlerinin log klasörünü süreç geneli statiğe yazar (POpsHelpers.MachineLogDir;
         // servis bir kez yazar, statik kalır)

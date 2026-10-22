@@ -14,11 +14,13 @@ namespace POps.Tests.Agent
     // CapabilitiesHandler ve VisionSession'a taşındı; bu testler taşımadan önce de aynı sonucu verir). Gerçek Vision tüneli
     // ve tepsi borusu yok: tünel VisionTunnelOverride ile açılır, tepsi TrayOverride'dır, denetim kayıtları ve sunucuya
     // giden mesajlar tek bir sıralı listeye yazılır.
-    [Collection(SharedStateCollection.Name)]
-    public class VisionCommandTests : SharedStateTestBase, IDisposable
+    // Machine: Worker'ın eş önbelleği sunucusu (TcpListener) IL'den ulaşılabilir
+    [Collection(MachineCollection.Name)]
+    public class VisionCommandTests : TestBase, IDisposable
     {
         private const string HwId = "HW-VIS";
 
+        private readonly AgentHarness _agent = AgentHarness.Create("vision-commands");
         private readonly Worker _worker;
         // Sırayla: "tray:<mesaj>", "send:<type>", "audit:<olay no>"
         private readonly List<string> _events = new List<string>();
@@ -28,9 +30,8 @@ namespace POps.Tests.Agent
 
         public VisionCommandTests()
         {
-            SecureStore.Dir = TestEnvironment.NewDir("vision-commands-secure");
-            AgentCapabilities.Load();   // dosya yok: Vision açık
-            _worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context)
+            _agent.Capabilities.Load();   // dosya yok: Vision açık
+            _worker = new Worker(NullLogger<Worker>.Instance, _agent.Context)
             {
                 HwId = HwId,
                 TrayOverride = m => { lock (_events) _events.Add("tray:" + m); },
@@ -53,8 +54,7 @@ namespace POps.Tests.Agent
         public void Dispose()
         {
             _worker.Dispose();
-            SecureStore.Dir = TestEnvironment.NewDir("vision-commands-reset");
-            AgentCapabilities.Load();
+            _agent.Dispose();
         }
 
         private Task Server(string json) => _worker.HandleServerMessageAsync(json, null, CancellationToken.None);
@@ -70,8 +70,8 @@ namespace POps.Tests.Agent
 
         private void VisionCapabilityOff()
         {
-            SecureStore.WriteProtected(SecureStore.PathOf(AgentCapabilities.FileName), "{\"terminal_enabled\":true,\"vision_enabled\":false}");
-            AgentCapabilities.Load();
+            SecureStore.WriteProtected(_agent.Paths.SecureFile(AgentCapabilities.FileName), "{\"terminal_enabled\":true,\"vision_enabled\":false}");
+            _agent.Capabilities.Load();
         }
 
         private void VisionModule(bool on) =>
@@ -174,7 +174,7 @@ namespace POps.Tests.Agent
         {
             await Server("{\"action\":\"start_stream\",\"fps\":2}");
             await Server("{\"action\":\"set_capabilities\",\"vision_enabled\":false}");
-            Assert.False(AgentCapabilities.VisionEnabled);
+            Assert.False(_agent.Capabilities.VisionEnabled);
             int finished = _events.IndexOf("audit:1011");
             int reported = _events.IndexOf("send:capabilities");
             Assert.True(finished >= 0 && reported > finished, string.Join(" | ", _events));

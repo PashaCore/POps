@@ -9,8 +9,7 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // Karantinada Ctrl+Alt+Del seçenekleri: uygula / geri al (saf mantık) ve kayıt dosyasıyla açılış temizliği
-    [Collection(SharedStateCollection.Name)]
-    public class KioskPoliciesTests : SharedStateTestBase
+    public class KioskPoliciesTests : TestBase
     {
         private const string User = @"HKU\S-1-5-21-1-2-3-1001";
         private static readonly string TaskMgrUser = FakeKioskRegistry.Path(User, KioskPolicies.SystemKey, "DisableTaskMgr");
@@ -139,26 +138,25 @@ namespace POps.Tests.Agent
         {
             var r = NewRegistry();
             r.Values[TaskMgrUser] = 0;
-            KioskMode.Registry = r;
-            try
+            using var agent = AgentHarness.Create("kiosk");
+            var kiosk = new KioskMode(agent.Paths.SecureFile(KioskMode.FileName), r);
             {
-                KioskMode.Engage();
-                Assert.True(File.Exists(KioskMode.RecordPath));
-                var saved = JsonSerializer.Deserialize<List<KioskEntry>>(File.ReadAllText(KioskMode.RecordPath));
+                kiosk.Engage();
+                Assert.True(File.Exists(kiosk.RecordPath));
+                var saved = JsonSerializer.Deserialize<List<KioskEntry>>(File.ReadAllText(kiosk.RecordPath));
                 Assert.Contains(saved, e => e.Hive == User && e.Name == "DisableTaskMgr" && e.HadValue && e.PreviousValue == 0);
                 Assert.Equal(1, r.Values[TaskMgrUser]);
 
                 // Karantina sürerken yeniden başlatma: ayarlar yerinde kalır
-                KioskMode.Sync(true);
+                kiosk.Sync(true);
                 Assert.Equal(1, r.Values[TaskMgrUser]);
 
                 // Açılışta karantina yok: önceki değerler, kayıt silinir
-                KioskMode.Sync(false);
+                kiosk.Sync(false);
                 Assert.Equal(0, r.Values[TaskMgrUser]);
                 Assert.False(r.Values.ContainsKey(FastSwitch));
-                Assert.False(File.Exists(KioskMode.RecordPath));
+                Assert.False(File.Exists(kiosk.RecordPath));
             }
-            finally { KioskMode.Registry = new FakeKioskRegistry(); }
         }
 
         [Fact]
@@ -166,13 +164,12 @@ namespace POps.Tests.Agent
         {
             var r = NewRegistry();
             r.Values[TaskMgrUser] = 1;
-            KioskMode.Registry = r;
-            try
+            using var agent = AgentHarness.Create("kiosk");
+            var kiosk = new KioskMode(agent.Paths.SecureFile(KioskMode.FileName), r);
             {
-                KioskMode.Release();
+                kiosk.Release();
                 Assert.Equal(1, r.Values[TaskMgrUser]);
             }
-            finally { KioskMode.Registry = new FakeKioskRegistry(); }
         }
     }
 }

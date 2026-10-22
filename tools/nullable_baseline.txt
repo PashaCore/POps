@@ -22,7 +22,6 @@ Agent/POps.Agent/POps.Agent/Generalizer.cs
 Agent/POps.Agent/POps.Agent/HardwareBinding.cs
 Agent/POps.Agent/POps.Agent/HardwareInfo.cs
 Agent/POps.Agent/POps.Agent/Helpdesk.cs
-Agent/POps.Agent/POps.Agent/KioskMode.cs
 Agent/POps.Agent/POps.Agent/LocalAudit.cs
 Agent/POps.Agent/POps.Agent/NetworkIsolation.cs
 Agent/POps.Agent/POps.Agent/OfflineBypass.cs

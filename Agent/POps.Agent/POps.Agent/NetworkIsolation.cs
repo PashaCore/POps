@@ -38,7 +38,7 @@ namespace POpsAgent
     //    cihaz kalıcı koparıyordu, yalnızca bypass kurtarıyordu. isolation.json'daki "önceki profiller" İLK
     //    karantinadaki hâliyle kalır (kaldırmada profiller doğru geri yüklensin); yalnızca server_addresses güncellenir.
     [SupportedOSPlatform("windows")]
-    public static class NetworkIsolation
+    public sealed class NetworkIsolation
     {
         public const string RuleGroup = "POps Isolation";
         // Sınav modu aynı motoru kendi kural grubuyla kullanır (bkz. ExamMode). Bir grup kalkarken öteki sürüyorsa
@@ -52,27 +52,28 @@ namespace POpsAgent
 
         public enum RefreshResult { NotIsolated, Unchanged, Updated, ResolveFailed, Failed }
 
-        // Durum dosyası güvenli depoda (AgentPaths.SecureFile(StateFileName)): Worker, CommandConnection ve QuarantineControl
-        // yolu AgentPaths'ten alır ve aşağıdaki işlevlerin statePath alan biçimlerini çağırır.
+        // Durum dosyası güvenli depoda (AgentPaths.SecureFile(StateFileName)). Worker kurar; QuarantineControl ve eş önbelleği
+        // yolu AgentPaths'ten alır.
         public const string StateFileName = "isolation.json";
 
-        // Süreç varsayılanı (SecureStore.Dir): eş önbelleği (PeerCache.DefaultIsolated) ve onu ya da yalıtımı sınayan testler
-        // için. Worker bölmesinin b3 adımı NetworkIsolation'ı örneğe çevirince kalkar.
-        public static string StatePath => SecureStore.PathOf(StateFileName);
-        public static bool IsActive => IsActiveAt(StatePath);
-        public static Task<bool> EnableAsync(string serverUrl) => EnableAsync(serverUrl, StatePath);
-        public static Task<bool> DisableAsync() => DisableAsync(StatePath);
-        public static Task<RefreshResult> RefreshServerAddressesAsync(string serverUrl, string reason) =>
-            RefreshServerAddressesAsync(serverUrl, reason, StatePath);
-        internal static List<string> ReadPreviouslyDisabledProfiles() => ReadPreviouslyDisabledProfiles(StatePath);
+        // statePath: durum dosyası (<güvenli depo>\isolation.json); scripts: güvenlik duvarı betiklerini çalıştıran (servis:
+        // PowerShell, bkz. MachineSeams.FirewallScripts; testlerde güvenlik duvarına dokunmayan sahte)
+        public NetworkIsolation(string statePath, Func<string, Task<(int Exit, string Output)>> scripts)
+        {
+            StatePath = statePath ?? throw new ArgumentNullException(nameof(statePath));
+            Scripts = scripts ?? throw new ArgumentNullException(nameof(scripts));
+        }
+
+        public string StatePath { get; }
+        public bool IsActive => IsActiveAt(StatePath);
+        internal Func<string, Task<(int Exit, string Output)>> Scripts { get; }
+        internal List<string> ReadPreviouslyDisabledProfiles() => ReadPreviouslyDisabledProfiles(StatePath);
 
         public static bool IsActiveAt(string statePath) => File.Exists(statePath);
 
-        // Betiği çalıştıran (testlerde güvenlik duvarına dokunmayan sahtesiyle değiştirilir)
-        internal static Func<string, Task<(int Exit, string Output)>> ScriptRunner { get; set; } = RunPowerShellAsync;
-
-        public static async Task<bool> EnableAsync(string serverUrl, string statePath)
+        public async Task<bool> EnableAsync(string serverUrl)
         {
+            string statePath = StatePath;
             await Gate.WaitAsync();
             try
             {
@@ -85,7 +86,7 @@ namespace POpsAgent
                 }
 
                 List<(BigInteger Start, BigInteger End, bool V6)> allowed = AllowedRanges(server.Concat(LocalInfrastructure()));
-                (int exit, string output) = await ScriptRunner(BuildEnableScript(allowed));
+                (int exit, string output) = await Scripts(BuildEnableScript(allowed));
                 if (exit != 0)
                 {
                     POpsHelpers.Log("ISOLATION", $"Karantina uygulanamadı (çıkış {exit}): {output}", true);
@@ -104,12 +105,13 @@ namespace POpsAgent
             finally { Gate.Release(); }
         }
 
-        public static async Task<bool> DisableAsync(string statePath)
+        public async Task<bool> DisableAsync()
         {
+            string statePath = StatePath;
             await Gate.WaitAsync();
             try
             {
-                (int exit, string output) = await ScriptRunner(BuildDisableScript(ReadPreviouslyDisabledProfiles(statePath)));
+                (int exit, string output) = await Scripts(BuildDisableScript(ReadPreviouslyDisabledProfiles(statePath)));
                 if (exit != 0)
                 {
                     POpsHelpers.Log("ISOLATION", $"Karantina kaldırılamadı (çıkış {exit}): {output}", true);
@@ -129,8 +131,9 @@ namespace POpsAgent
 
         // Karantina sürüyorsa sunucu adı yeniden çözülür; adres kümesi değiştiyse kurallar yeni adreslerle kurulur.
         // Çözüm boşsa ya da hata verirse mevcut kurallara dokunulmaz.
-        public static async Task<RefreshResult> RefreshServerAddressesAsync(string serverUrl, string reason, string statePath)
+        public async Task<RefreshResult> RefreshServerAddressesAsync(string serverUrl, string reason)
         {
+            string statePath = StatePath;
             await Gate.WaitAsync();
             try
             {
@@ -145,7 +148,7 @@ namespace POpsAgent
                 if (recorded != null && SameAddresses(server, recorded)) return RefreshResult.Unchanged;
 
                 List<(BigInteger Start, BigInteger End, bool V6)> allowed = AllowedRanges(server.Concat(LocalInfrastructure()));
-                (int exit, string output) = await ScriptRunner(BuildEnableScript(allowed));
+                (int exit, string output) = await Scripts(BuildEnableScript(allowed));
                 if (exit != 0)
                 {
                     POpsHelpers.Log("ISOLATION", $"Karantina izin listesi yenilenemedi (çıkış {exit}): {output}", true);
@@ -367,7 +370,8 @@ ConvertTo-Json -Compress -InputObject $previous
             return disabled;
         }
 
-        private static async Task<(int Exit, string Output)> RunPowerShellAsync(string script)
+        // Servisin betik çalıştırıcısı (yalnızca MachineSeams.Production kurar)
+        internal static async Task<(int Exit, string Output)> RunPowerShellAsync(string script)
         {
             var psi = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, @"WindowsPowerShell\v1.0\powershell.exe"))
             {

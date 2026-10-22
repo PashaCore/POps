@@ -13,9 +13,11 @@ namespace POps.Tests.Agent
 {
     // Sunucunun komut mesajları (Worker.HandleServerMessageAsync). Giden mesajlar yakalanır; karantina gerçek güvenlik
     // duvarına dokunmayan sahte yalıtımla, uzaktan komut gerçek cmd.exe ile çalışır.
-    [Collection(SharedStateCollection.Name)]
-    public class WorkerCommandTests : SharedStateTestBase, IDisposable
+    // Machine: uzaktan komutlar gerçek cmd.exe ile çalışır, sonuç süreyle beklenir; Worker'ın eş önbelleği sunucusu IL'den ulaşılabilir
+    [Collection(MachineCollection.Name)]
+    public class WorkerCommandTests : TestBase, IDisposable
     {
+        private readonly AgentHarness _agent = AgentHarness.Create("worker");
         private readonly Worker _worker;
         private readonly List<JsonElement> _sent = new List<JsonElement>();
         private readonly List<string> _tray = new List<string>();
@@ -23,10 +25,8 @@ namespace POps.Tests.Agent
 
         public WorkerCommandTests()
         {
-            SecureStore.Dir = TestEnvironment.NewDir("worker-secure");
-            AgentUpdate.DataDir = TestEnvironment.NewDir("worker-data");
-            AgentCapabilities.Load();   // dosya yok: ikisi de açık
-            _worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context)
+            _agent.Capabilities.Load();   // dosya yok: ikisi de açık
+            _worker = new Worker(NullLogger<Worker>.Instance, _agent.Context)
             {
                 HwId = "HW-TEST",
                 SendOverride = payload =>
@@ -37,21 +37,21 @@ namespace POps.Tests.Agent
                 CommandRunner = TestEnvironment.NewCommandRunner(),
             };
             _worker.Quarantine = new QuarantineControl(
-                AgentHarness.FromStatics().Paths,
+                _agent.Paths,
                 _tray.Add,
-                () => { File.WriteAllText(NetworkIsolation.StatePath, "{}"); return Task.FromResult(true); },
+                () => { File.WriteAllText(_agent.Paths.SecureFile(NetworkIsolation.StateFileName), "{}"); return Task.FromResult(true); },
                 () =>
                 {
-                    if (_disableSucceeds) File.Delete(NetworkIsolation.StatePath);
+                    if (_disableSucceeds) File.Delete(_agent.Paths.SecureFile(NetworkIsolation.StateFileName));
                     return Task.FromResult(_disableSucceeds);
-                });
+                },
+                _agent.Machine.Kiosk);
         }
 
         public void Dispose()
         {
             _worker.Dispose();
-            SecureStore.Dir = TestEnvironment.NewDir("worker-reset");
-            AgentCapabilities.Load();
+            _agent.Dispose();
         }
 
         private Task Handle(string json) => _worker.HandleServerMessageAsync(json, null, CancellationToken.None);
@@ -72,10 +72,10 @@ namespace POps.Tests.Agent
             throw new TimeoutException($"Görev {taskId} sonucu gelmedi");
         }
 
-        private static void DisableTerminal()
+        private void DisableTerminal()
         {
-            File.WriteAllText(SecureStore.PathOf(AgentCapabilities.FileName), "{\"terminal_enabled\":false,\"vision_enabled\":true}");
-            AgentCapabilities.Load();
+            File.WriteAllText(_agent.Paths.SecureFile(AgentCapabilities.FileName), "{\"terminal_enabled\":false,\"vision_enabled\":true}");
+            _agent.Capabilities.Load();
         }
 
         // ------------------------------------------------------------------ tanınmayan / bozuk
@@ -142,14 +142,14 @@ namespace POps.Tests.Agent
         public async Task SetCapabilities_TurnsVisionOff_AndReportsTheState()
         {
             await Handle("{\"action\":\"set_capabilities\",\"vision_enabled\":false}");
-            Assert.False(AgentCapabilities.VisionEnabled);
+            Assert.False(_agent.Capabilities.VisionEnabled);
             JsonElement status = Sent("capabilities").Last();
             Assert.False(status.GetProperty("vision_enabled").GetBoolean());
             Assert.True(status.GetProperty("terminal_enabled").GetBoolean());
 
             // Sunucu yeniden açamaz
             await Handle("{\"action\":\"set_capabilities\",\"vision_enabled\":true}");
-            Assert.False(AgentCapabilities.VisionEnabled);
+            Assert.False(_agent.Capabilities.VisionEnabled);
         }
 
         [Fact]
@@ -221,16 +221,16 @@ namespace POps.Tests.Agent
         [Fact]
         public async Task SetSecret_Malformed_IsIgnored()
         {
-            string before = AgentCredentials.CurrentSecret;
+            string before = _agent.Credentials.CurrentSecret;
             await Handle("{\"action\":\"set_secret\",\"secret\":\"kısa\"}");
             await Handle("{\"action\":\"set_secret\",\"secret\":5}");
-            Assert.Equal(before, AgentCredentials.CurrentSecret);
+            Assert.Equal(before, _agent.Credentials.CurrentSecret);
         }
 
         // ------------------------------------------------------------------ güncelleme sonucu onayı
 
         private void WriteResult() =>
-            File.WriteAllText(AgentUpdate.ResultPath, "{\"outcome\":\"success\",\"from_version\":\"0.1.13-alpha\",\"to_version\":\"0.1.14-alpha\"}");
+            File.WriteAllText(_agent.Paths.UpdateResultPath, "{\"outcome\":\"success\",\"from_version\":\"0.1.13-alpha\",\"to_version\":\"0.1.14-alpha\"}");
 
         [Fact]
         public async Task UpdateResult_AckServer_KeepsTheFileUntilTheMatchingAck()
@@ -244,18 +244,18 @@ namespace POps.Tests.Agent
             await _worker.ReportUpdateResultAsync(CancellationToken.None);
             JsonElement sent = Assert.Single(Sent("update_result"));
             string id = sent.GetProperty("result_id").GetString();
-            Assert.Equal(AgentUpdate.PendingResultId(), id);
-            Assert.True(File.Exists(AgentUpdate.ResultPath));
+            Assert.Equal(AgentUpdate.PendingResultId(_agent.Paths), id);
+            Assert.True(File.Exists(_agent.Paths.UpdateResultPath));
 
             // Hemen yeniden gönderilmez
             await _worker.ReportUpdateResultAsync(CancellationToken.None);
             Assert.Single(Sent("update_result"));
 
             await Handle("{\"action\":\"update_result_ack\",\"result_id\":\"ffffffffffffffffffffffffffffffff\"}");
-            Assert.True(File.Exists(AgentUpdate.ResultPath));
+            Assert.True(File.Exists(_agent.Paths.UpdateResultPath));
             await Handle("{\"action\":\"update_result_ack\",\"result_id\":\"" + id + "\"}");
-            Assert.False(File.Exists(AgentUpdate.ResultPath));
-            Assert.True(File.Exists(AgentUpdate.ReportedResultPath));
+            Assert.False(File.Exists(_agent.Paths.UpdateResultPath));
+            Assert.True(File.Exists(_agent.Paths.ReportedResultPath));
         }
 
         [Fact]
@@ -270,7 +270,7 @@ namespace POps.Tests.Agent
             now += UpdateResultReporter.ServerInfoWait;
             await _worker.ReportUpdateResultAsync(CancellationToken.None);
             Assert.Single(Sent("update_result"));
-            Assert.False(File.Exists(AgentUpdate.ResultPath));
+            Assert.False(File.Exists(_agent.Paths.UpdateResultPath));
         }
 
         [Fact]
@@ -281,33 +281,35 @@ namespace POps.Tests.Agent
             DateTime now = DateTime.UtcNow + TimeSpan.FromMinutes(1);
             _worker.UpdateResults.UtcNow = () => now;
             await _worker.ReportUpdateResultAsync(CancellationToken.None);
-            Assert.True(File.Exists(AgentUpdate.ResultPath));
+            Assert.True(File.Exists(_agent.Paths.UpdateResultPath));
         }
     }
 
     // Ağ yalıtımı: aç / kapat / sunucu adresini yenile, sahte PowerShell çalıştırıcısıyla
-    [Collection(SharedStateCollection.Name)]
-    public class NetworkIsolationFlowTests : SharedStateTestBase, IDisposable
+    public class NetworkIsolationFlowTests : TestBase
     {
         private readonly List<string> _scripts = new List<string>();
         private int _exit;
         private const string Profiles = "[{\"Name\":\"Domain\",\"Enabled\":\"True\"},{\"Name\":\"Private\",\"Enabled\":\"False\"},{\"Name\":\"Public\",\"Enabled\":\"True\"}]";
 
-        private readonly Func<string, Task<(int Exit, string Output)>> _realRunner = NetworkIsolation.ScriptRunner;
+        // Testin ağ yalıtımı: kendi durum dosyası, güvenlik duvarı betikleri _runner'a (makineye dokunmaz)
+        private readonly string _state;
+        private Func<string, Task<(int Exit, string Output)>> _runner;
+        private NetworkIsolation _isolation;
 
         public NetworkIsolationFlowTests()
         {
-            SecureStore.Dir = TestEnvironment.NewDir("iso-flow");
-            NetworkIsolation.ScriptRunner = script =>
+            _state = Path.Combine(TestEnvironment.NewDir("iso-flow"), POpsAgent.NetworkIsolation.StateFileName);
+            _runner = script =>
             {
                 _scripts.Add(script);
                 return Task.FromResult((_exit, _exit == 0 ? "uyarı satırı\n" + Profiles : "erişim reddedildi"));
             };
         }
 
-        public void Dispose() => NetworkIsolation.ScriptRunner = _realRunner;
+        private NetworkIsolation NetworkIsolation => _isolation ??= new NetworkIsolation(_state, script => _runner(script));
 
-        private static List<string> Servers() => NetworkIsolation.ReadServerAddresses(File.ReadAllText(NetworkIsolation.StatePath));
+        private List<string> Servers() => NetworkIsolation.ReadServerAddresses(File.ReadAllText(NetworkIsolation.StatePath));
 
         [Fact]
         public async Task Enable_RecordsProfilesAndServer()
@@ -356,7 +358,7 @@ namespace POps.Tests.Agent
         {
             await NetworkIsolation.EnableAsync("https://203.0.113.10");
             // Yenilemede betik "şimdiki" profilleri döndürür (hepsi açık): kayıt yine de ilk hâlini korumalı
-            NetworkIsolation.ScriptRunner = script =>
+            _runner = script =>
             {
                 _scripts.Add(script);
                 return Task.FromResult((0, "[{\"Name\":\"Domain\",\"Enabled\":\"True\"},{\"Name\":\"Private\",\"Enabled\":\"True\"},{\"Name\":\"Public\",\"Enabled\":\"True\"}]"));
@@ -409,9 +411,12 @@ namespace POps.Tests.Agent
     }
 
     // B2-B4 Worker üzerinden: ret çıkış kodu, yinelenen görev, onaylı/onaysız sunucu, yeniden bağlanma, yeniden başlama
-    [Collection(SharedStateCollection.Name)]
-    public class WorkerResultAckTests : SharedStateTestBase, IDisposable
+    // Machine: uzaktan komutlar gerçek cmd.exe ile çalışır; Worker'ın eş önbelleği sunucusu (TcpListener) IL'den ulaşılabilir
+    [Collection(MachineCollection.Name)]
+    public class WorkerResultAckTests : TestBase, IDisposable
     {
+        // Testin ajanı: yeniden başlayan Worker'lar aynı klasörleri ve yetenek durumunu görür
+        private readonly AgentHarness _agent = AgentHarness.Create("worker-ack");
         private Worker _worker;
         private readonly List<JsonElement> _sent = new List<JsonElement>();
         private bool _sendSucceeds = true;
@@ -421,15 +426,13 @@ namespace POps.Tests.Agent
 
         public WorkerResultAckTests()
         {
-            SecureStore.Dir = TestEnvironment.NewDir("worker-ack");
-            AgentUpdate.DataDir = TestEnvironment.NewDir("worker-ack-data");
-            AgentCapabilities.Load();
+            _agent.Capabilities.Load();
             _worker = NewWorker();
         }
 
         private Worker NewWorker()
         {
-            var worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context)
+            var worker = new Worker(NullLogger<Worker>.Instance, _agent.Context)
             {
                 HwId = "HW-TEST",
                 SendOverride = payload =>
@@ -447,20 +450,19 @@ namespace POps.Tests.Agent
         public void Dispose()
         {
             _worker.Dispose();
-            SecureStore.Dir = TestEnvironment.NewDir("worker-ack-reset");
-            AgentCapabilities.Load();
+            _agent.Dispose();
         }
 
         private Task Handle(string json) => _worker.HandleServerMessageAsync(json, null, CancellationToken.None);
 
-        private string SpoolPath => SecureStore.PathOf(ResultSpool.FileName);
+        private string SpoolPath => _agent.Paths.SecureFile(ResultSpool.FileName);
 
         private List<JsonElement> Sent(string type) { lock (_sent) return _sent.Where(m => m.TryGetProperty("type", out var t) && t.GetString() == type).ToList(); }
 
-        private static void DisableTerminal()
+        private void DisableTerminal()
         {
-            File.WriteAllText(SecureStore.PathOf(AgentCapabilities.FileName), "{\"terminal_enabled\":false,\"vision_enabled\":true}");
-            AgentCapabilities.Load();
+            File.WriteAllText(_agent.Paths.SecureFile(AgentCapabilities.FileName), "{\"terminal_enabled\":false,\"vision_enabled\":true}");
+            _agent.Capabilities.Load();
         }
 
         // Terminal kapalı: belirleyici, süreçsiz bir sonuç üretir

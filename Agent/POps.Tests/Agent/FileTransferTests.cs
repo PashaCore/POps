@@ -15,16 +15,15 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // Dosya aktarımı: ad temizleme, yalnızca kendi sunucusu, izinli hedefler, çekmede profil ve güvenli klasör kuralları
-    [Collection(SharedStateCollection.Name)]
-    public class FileTransferTests : SharedStateTestBase, IDisposable
+    // Machine: Worker'ın eş önbelleği sunucusu (TcpListener) IL'den ulaşılabilir
+    [Collection(MachineCollection.Name)]
+    public class FileTransferTests : TestBase, IDisposable
     {
         private const string Server = "https://pops.example";
         private const string Secret = "files-secret-0123456789abcdefghijklm";
-        private readonly HttpClient _client = AgentHttp.Default.Client;
-        // Testin değiştirdiği FileTransfer kancalarının önceki değerleri (Dispose'da geri konur; null bırakılmaz)
-        private readonly Func<string> _publicDesktopOverride = FileTransfer.PublicDesktopOverride;
-        private readonly Func<(string ProfilesDirectory, string CurrentProfile)> _profileInfo = FileTransfer.ProfileInfo;
-        private readonly HttpClient _testClient;
+        // Testin ajanı: sunucu Handler'dır; ortak masaüstü ve profiller (makine kapıları) testin klasörleri
+        private readonly AgentHarness _agent;
+        private FileTransfer _transfer;
         private readonly string _desktop = TestEnvironment.NewDir("public-desktop");
         private readonly string _profiles = TestEnvironment.NewDir("users");
         private readonly byte[] _content = RandomNumberGenerator.GetBytes(5000);
@@ -33,29 +32,27 @@ namespace POps.Tests.Agent
 
         public FileTransferTests()
         {
-            SecureStore.Dir = TestEnvironment.NewDir("files-secure");
-            AgentUpdate.DataDir = TestEnvironment.NewDir("files-data");
-            AgentCapabilities.Load();
-            AgentCredentials.SaveSecret(Secret, "HW-FILES");
-            FileTransfer.PublicDesktopOverride = () => _desktop;
+            _agent = AgentHarness.Create("files", new Handler(this), new MachineSeams
+            {
+                Kiosk = new FakeKioskRegistry(),
+                PublicDesktop = () => _desktop,
+                Profiles = () => (_profiles, Path.Combine(_profiles, "ali")),
+            });
+            _agent.Capabilities.Load();
+            _agent.Credentials.SaveSecret(Secret, "HW-FILES");
             Directory.CreateDirectory(Path.Combine(_profiles, "ali"));
             Directory.CreateDirectory(Path.Combine(_profiles, "ayse"));
             Directory.CreateDirectory(Path.Combine(_profiles, "Public"));
-            FileTransfer.ProfileInfo = () => (_profiles, Path.Combine(_profiles, "ali"));
-            _testClient = new HttpClient(new Handler(this));
-            AgentHttp.Default.Client = _testClient;
         }
 
-        public void Dispose()
-        {
-            AgentHttp.Default.Client = _client;
-            _testClient.Dispose();
-            FileTransfer.PublicDesktopOverride = _publicDesktopOverride;
-            FileTransfer.ProfileInfo = _profileInfo;
-            SecureStore.Dir = TestEnvironment.DefaultSecureDir;
-            AgentUpdate.DataDir = TestEnvironment.DefaultDataDir;
-            AgentCapabilities.Load();
-        }
+        public void Dispose() => _agent.Dispose();
+
+        // X-Agent-Features: bu bağlamın yetenek durumundan (bkz. CommandConnection)
+        private AgentFeatures AgentFeatures => new AgentFeatures(_agent.Capabilities);
+
+        // Testin dosya aktarımı: bağlamın klasörleri, HTTP istemcisi, cihaz anahtarı ve makine kapıları (Worker'ınki gibi)
+        private FileTransfer FileTransfer => _transfer ??= new FileTransfer(_agent.Paths, _agent.Http, _agent.Credentials,
+            _agent.Machine.PublicDesktop, _agent.Machine.Profiles);
 
         private sealed class Handler : HttpMessageHandler
         {
@@ -250,10 +247,10 @@ namespace POps.Tests.Agent
         [Fact]
         public void Capabilities_HaveTheServerKeys()
         {
-            AgentCapabilities.Load();
+            _agent.Capabilities.Load();
             Assert.Equal(new[] { "type", "terminal_enabled", "vision_enabled", "server_ca", "files_enabled", "exam_enabled", "power_enabled", "message_enabled", "peer_cache_enabled" },
-                AgentCapabilities.StatusMessage().Keys);
-            Assert.Equal(true, AgentCapabilities.StatusMessage()[AgentCapabilities.Files]);
+                _agent.Capabilities.StatusMessage().Keys);
+            Assert.Equal(true, _agent.Capabilities.StatusMessage()[AgentCapabilities.Files]);
         }
 
         [Fact]
@@ -269,11 +266,11 @@ namespace POps.Tests.Agent
             Assert.True(FileTransfer.TryParsePush(Push(), Server, out var request, out _));
             var (status, path, _) = await FileTransfer.PushAsync(request, "HW-FILES", new DateTime(2026, 10, 5), CancellationToken.None);
             Assert.Equal("done", status);
-            Assert.Equal(Path.Combine(AgentUpdate.DataDir, "inbox", "2026-10-05", "ödev.pdf"), path);
+            Assert.Equal(Path.Combine(_agent.Paths.DataDir, "inbox", "2026-10-05", "ödev.pdf"), path);
             Assert.Equal(_content, File.ReadAllBytes(path));
             Assert.Equal("https://pops.example/api/files/" + PushId + "/download?t=abc", _seen.RequestUri.ToString());
             Assert.Equal(Secret, _seen.Headers.GetValues("X-Agent-Secret").Single());
-            Assert.Empty(Directory.GetFiles(SecureStore.Dir, "transfer-*"));   // geçici dosya kalmaz
+            Assert.Empty(Directory.GetFiles(_agent.Paths.SecureDir, "transfer-*"));   // geçici dosya kalmaz
         }
 
         [Fact]
@@ -296,7 +293,7 @@ namespace POps.Tests.Agent
             var (outcome, path, _) = await FileTransfer.PushAsync(request, "HW-FILES", new DateTime(2026, 10, 5), CancellationToken.None);
             Assert.Equal("failed", outcome);   // sunucu şeması: sağlama hatası "failed"
             Assert.Null(path);
-            Assert.Empty(Directory.GetFiles(Path.Combine(AgentUpdate.DataDir, "inbox", "2026-10-05")));
+            Assert.Empty(Directory.GetFiles(Path.Combine(_agent.Paths.DataDir, "inbox", "2026-10-05")));
         }
 
         // ------------------------------------------------------------------ çekme
@@ -328,7 +325,7 @@ namespace POps.Tests.Agent
         [Fact]
         public void PullPathRules()
         {
-            string secure = SecureStore.Dir;
+            string secure = _agent.Paths.SecureDir;
             Assert.NotNull(FileTransfer.CheckPullPath(Path.Combine(secure, "agent.secret"), secure, _profiles, Path.Combine(_profiles, "ali"), true));
             Assert.NotNull(FileTransfer.CheckPullPath(Path.Combine(_profiles, "ayse", "a.txt"), secure, _profiles, Path.Combine(_profiles, "ali"), false));
             Assert.Null(FileTransfer.CheckPullPath(Path.Combine(_profiles, "ayse", "a.txt"), secure, _profiles, Path.Combine(_profiles, "ali"), true));
@@ -359,7 +356,7 @@ namespace POps.Tests.Agent
         [Fact]
         public async Task Pull_RefusesSecureFiles_OtherProfiles_AndLargeFiles()
         {
-            string secret = SecureStore.PathOf("agent.secret");
+            string secret = _agent.Paths.SecureFile("agent.secret");
             Assert.True(FileTransfer.TryParsePull(Pull(secret, any: true), Server, out var r1, out _));
             Assert.Equal("rejected", (await FileTransfer.PullAsync(r1, "HW-FILES", CancellationToken.None)).Outcome);
 
@@ -379,18 +376,18 @@ namespace POps.Tests.Agent
         private readonly List<JsonElement> _sent = new List<JsonElement>();
         private readonly List<string> _tray = new List<string>();
 
-        private Worker NewWorker() => new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context)
+        private Worker NewWorker() => new Worker(NullLogger<Worker>.Instance, _agent.Context)
         {
             HwId = "HW-FILES",
             SendOverride = p => { lock (_sent) _sent.Add(JsonSerializer.SerializeToElement(p)); return Task.FromResult(true); },
             TrayOverride = m => { lock (_tray) _tray.Add(m); },
         };
 
-        private static void DisableFilesLocally()
+        private void DisableFilesLocally()
         {
-            SecureStore.WriteProtected(SecureStore.PathOf(AgentCapabilities.FileName), "{\"files_enabled\":false}");
-            AgentCapabilities.Load();
-            Assert.False(AgentCapabilities.FilesEnabled);
+            SecureStore.WriteProtected(_agent.Paths.SecureFile(AgentCapabilities.FileName), "{\"files_enabled\":false}");
+            _agent.Capabilities.Load();
+            Assert.False(_agent.Capabilities.FilesEnabled);
         }
 
         [Fact]
@@ -460,18 +457,6 @@ namespace POps.Tests.Agent
             lock (_sent) denied = Assert.Single(_sent);
             Assert.Equal("capability_denied", denied.GetProperty("type").GetString());
             Assert.False(denied.TryGetProperty("transfer_id", out _));
-        }
-
-        // Test sınıfı FileTransfer kancalarını önceki değerlerine döndürür (null bırakmaz: sonraki çekme NullReference'la düşerdi)
-        [Fact]
-        public void Dispose_RestoresTheSeams()
-        {
-            var desktop = FileTransfer.PublicDesktopOverride;
-            var profiles = FileTransfer.ProfileInfo;
-            new FileTransferTests().Dispose();
-            Assert.Same(desktop, FileTransfer.PublicDesktopOverride);
-            Assert.Same(profiles, FileTransfer.ProfileInfo);
-            Assert.NotNull(_profileInfo);
         }
 
         [Fact]

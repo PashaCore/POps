@@ -23,8 +23,7 @@ namespace POpsAgent
     // gelen "aç" isteği yok sayılır: yeniden açmak yerel yöneticinin işidir (MSI yeniden kurulum / onarım).
     // Dosya yoksa (bu özellikten önceki kurulum) hepsi açıktır; dosyada olmayan yetenek (eski dosya) açıktır; dosya
     // okunamıyorsa hepsi kapalı sayılır.
-    // Bu çalışmanın durumu bağlamdaki CapabilityState örneğindedir (bkz. AgentContext.Capabilities); burada adlar ve süreç
-    // varsayılanı kalır.
+    // Bu çalışmanın durumu bağlamdaki CapabilityState örneğindedir (bkz. AgentContext.Capabilities); burada adlar kalır.
     [SupportedOSPlatform("windows")]
     public static class AgentCapabilities
     {
@@ -37,24 +36,6 @@ namespace POpsAgent
         public const string Message = "message_enabled";
         public const string PeerCacheKey = "peer_cache_enabled";
         internal static readonly string[] Names = { Terminal, Vision, Exam, Files, Power, Message, PeerCacheKey };
-
-        // Süreç varsayılanı: servis açılışta bağlamın örneğine çevirir (bkz. AgentContext.UseForProcess). Worker ve kurduğu
-        // servisler bağlamın örneğini kullanır; bunu Worker bölmesinin b3 adımına kadar statik kalan kod (PeerCache,
-        // AgentFeatures.Header, AgentUpdate'in eş önbelleği kararları) ve aşağıdaki biçimleri çağıran SharedState testleri
-        // okur. Başlangıç değeri dosyayı (ve kurum sertifikasını) her kullanımda SecureStore.Dir'den alır.
-        public static CapabilityState Process { get; internal set; } =
-            new CapabilityState(() => SecureStore.PathOf(FileName), new ServerTrust(() => SecureStore.PathOf(ServerTrust.FileName)));
-
-        public static bool TerminalEnabled => Process.TerminalEnabled;
-        public static bool VisionEnabled => Process.VisionEnabled;
-        public static bool ExamEnabled => Process.ExamEnabled;
-        public static bool FilesEnabled => Process.FilesEnabled;
-        public static bool PowerEnabled => Process.PowerEnabled;
-        public static bool MessageEnabled => Process.MessageEnabled;
-        public static bool PeerCacheEnabled => Process.PeerCacheEnabled;
-        public static void Load() => Process.Load();
-        public static (List<string> Disabled, List<string> IgnoredEnables) ApplyServerRequest(JsonElement request) => Process.ApplyServerRequest(request);
-        public static Dictionary<string, object> StatusMessage() => Process.StatusMessage();
     }
 
     // Bir ajanın yetenek durumu (bkz. AgentCapabilities): capabilities.json'dan okunur, sunucunun kapatma isteğiyle değişir.
@@ -69,19 +50,11 @@ namespace POpsAgent
             [AgentCapabilities.Power] = true, [AgentCapabilities.Message] = true, [AgentCapabilities.PeerCacheKey] = true,
         };
         // capabilities.json (servis: <güvenli depo>\capabilities.json) ve sunucu sertifikasının doğrulanma kipi ("server_ca")
-        private readonly Func<string> _path;
+        private readonly string _path;
         private readonly ServerTrust _trust;
 
         // path: capabilities.json; trust: bağlamın ServerTrust'ı ("server_ca")
         public CapabilityState(string path, ServerTrust trust)
-        {
-            ArgumentNullException.ThrowIfNull(path);
-            _path = () => path;
-            _trust = trust ?? throw new ArgumentNullException(nameof(trust));
-        }
-
-        // Dosya her kullanımda okunur: süreç varsayılanı içindir (bkz. AgentCapabilities.Process)
-        internal CapabilityState(Func<string> path, ServerTrust trust)
         {
             _path = path ?? throw new ArgumentNullException(nameof(path));
             _trust = trust ?? throw new ArgumentNullException(nameof(trust));
@@ -97,7 +70,7 @@ namespace POpsAgent
 
         public void Load()
         {
-            string path = _path();
+            string path = _path;
             string text = SecureStore.Read(path);
             lock (_gate)
             {
@@ -188,7 +161,7 @@ namespace POpsAgent
             foreach (string name in AgentCapabilities.Names) json[name] = _state[name];
             json["source"] = source;
             json["updated_at"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-            try { SecureStore.WriteProtected(_path(), json.ToJsonString(new JsonSerializerOptions { WriteIndented = true })); }
+            try { SecureStore.WriteProtected(_path, json.ToJsonString(new JsonSerializerOptions { WriteIndented = true })); }
             catch (Exception ex) { POpsHelpers.Log("POLICY", $"{AgentCapabilities.FileName} yazılamadı; kapatma bu çalışmada geçerli, yeniden başlatmada kaybolabilir: {ex.Message}", true); }
         }
     }

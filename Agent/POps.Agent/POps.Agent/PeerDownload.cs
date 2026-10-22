@@ -25,28 +25,37 @@ namespace POpsAgent
     //  * Bağlantı için 3 sn. Yanıt başlığı için 75 sn: meşgul eş isteği boş aktarım yeri için 60 sn sıraya alır (bkz.
     //    PeerCacheServer). Yanıt 200 ve Content-Length imzalı boyut olmalı; aktarımda 15 sn veri gelmezse ya da eş
     //    başına toplam 5 dk dolarsa sıradaki kaynağa geçilir.
+    // Bir ajanın güncelleme durumunun parçasıdır (bkz. AgentUpdater).
     [SupportedOSPlatform("windows")]
-    public static class PeerDownload
+    public sealed class PeerDownload
     {
         public const int MaxPeers = 5;
         public static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(3);
         public static readonly TimeSpan PeerTimeout = TimeSpan.FromMinutes(5);
-        // Testler: yanıt başlığı ve veri bekleme süreleri kısaltılır
-        internal static TimeSpan HeaderTimeout { get; set; } = DefaultHeaderTimeout;
-        internal static TimeSpan StallTimeout { get; set; } = DefaultStallTimeout;
         internal static readonly TimeSpan DefaultHeaderTimeout = TimeSpan.FromSeconds(75);
         internal static readonly TimeSpan DefaultStallTimeout = TimeSpan.FromSeconds(15);
         private const int MaxUrlLength = 256;
 
         private static readonly Regex HwIdRegex = new Regex("^[A-Za-z0-9_-]{1,64}$", RegexOptions.Compiled);
 
-        // Testler: sahte eş 127.0.0.1'de çalışır
-        internal static bool AllowLoopbackPeers { get; set; }
+        private readonly Func<IPAddress, bool> _isLocalSubnet;
+
+        // isLocalSubnet: adres bu bilgisayarın yerel alt ağlarından birinde mi (servis: eş önbelleğinin denetimi, bkz.
+        // PeerCache.IsLocalSubnet; her kullanımda sorulur)
+        public PeerDownload(Func<IPAddress, bool> isLocalSubnet)
+        {
+            _isLocalSubnet = isLocalSubnet ?? throw new ArgumentNullException(nameof(isLocalSubnet));
+        }
+
+        // Testler: yanıt başlığı ve veri bekleme süreleri kısaltılır; sahte eş 127.0.0.1'de çalışır (servis değiştirmez)
+        internal TimeSpan HeaderTimeout { get; set; } = DefaultHeaderTimeout;
+        internal TimeSpan StallTimeout { get; set; } = DefaultStallTimeout;
+        internal bool AllowLoopbackPeers { get; set; }
 
         public sealed record Peer(string HwId, Uri Url);
 
         // Emirdeki eşler, sırasıyla; geçersiz olanlar loglanıp atlanır. Alan yoksa ya da dizi değilse boş liste.
-        public static List<Peer> Parse(JsonElement command, string sha256)
+        public List<Peer> Parse(JsonElement command, string sha256)
         {
             var peers = new List<Peer>();
             if (command.ValueKind != JsonValueKind.Object || !command.TryGetProperty("peers", out JsonElement list) || list.ValueKind != JsonValueKind.Array)
@@ -68,7 +77,7 @@ namespace POpsAgent
             return peers;
         }
 
-        public static bool TryValidate(string? url, string sha256, out Uri? uri, out string reason)
+        public bool TryValidate(string? url, string sha256, out Uri? uri, out string reason)
         {
             uri = null;
             if (string.IsNullOrEmpty(url) || url.Length > MaxUrlLength) { reason = "adres yok ya da çok uzun"; return false; }
@@ -83,7 +92,7 @@ namespace POpsAgent
             bool loopback = IPAddress.IsLoopback(a);
             if (loopback && !AllowLoopbackPeers) { reason = "geri döngü adresi"; return false; }
             if (!loopback && !IsPrivateOrLinkLocal(a)) { reason = "özel ya da bağlantı-yerel bir adres değil"; return false; }
-            if (!PeerCache.IsLocalSubnet(a)) { reason = "bu bilgisayarın yerel alt ağında değil"; return false; }
+            if (!_isLocalSubnet(a)) { reason = "bu bilgisayarın yerel alt ağında değil"; return false; }
             uri = parsed;
             reason = "";
             return true;
@@ -102,7 +111,7 @@ namespace POpsAgent
         }
 
         // Eşler sırayla denenir; doğrulanmış paket hedefe yazılır. Dönen: paketi veren eş, olmadıysa null (hedef silinir).
-        public static async Task<Peer?> DownloadAsync(IReadOnlyList<Peer>? peers, ReleaseVerifier.Artifact expected, string target)
+        public async Task<Peer?> DownloadAsync(IReadOnlyList<Peer>? peers, ReleaseVerifier.Artifact expected, string target)
         {
             if (peers == null || peers.Count == 0) return null;
             using var handler = new SocketsHttpHandler
@@ -128,7 +137,7 @@ namespace POpsAgent
         }
 
         // null: paket indi ve imzalı boyut + SHA-256 tuttu; aksi halde neden
-        private static async Task<string?> TryPeerAsync(HttpClient client, Peer peer, ReleaseVerifier.Artifact expected, string target)
+        private async Task<string?> TryPeerAsync(HttpClient client, Peer peer, ReleaseVerifier.Artifact expected, string target)
         {
             using var cts = new CancellationTokenSource(HeaderTimeout);
             try

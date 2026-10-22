@@ -14,41 +14,38 @@ namespace POps.Tests.Agent
 {
     // Tepsi borusu sunucu bağlantısından bağımsızdır: sunucuya ulaşılamazken çevrimdışı bypass kodu servise ulaşmalı.
     // Gerçek boru açılır (testlere özel ad); tepsinin yerine istemci doğrulamasını geçen sahte bir istemci bağlanır.
-    [Collection(SharedStateCollection.Name)]
-    public class TrayPipeLifetimeTests : SharedStateTestBase, IDisposable
+    // Machine: gerçek tepsi borusu açılır, sahte tepsi bağlanır
+    [Collection(MachineCollection.Name)]
+    public class TrayPipeLifetimeTests : TestBase, IDisposable
     {
         private const string HwId = "HW-PIPE00000001";
         private const string FleetSecret = "pipe-test-secret";
         private readonly List<string> _tray = new List<string>();
+        // Tepsi borusu: kurulu servisle çakışmayan ad, sahte tepsi denetlenmeden kabul edilir
+        private readonly AgentHarness _agent = AgentHarness.Create("pipe", machine: new MachineSeams { Kiosk = new FakeKioskRegistry(), TrayPipe = AgentHarness.TestTrayPipe() });
         private readonly Worker _worker;
 
         public TrayPipeLifetimeTests()
         {
-            SecureStore.Dir = TestEnvironment.NewDir("pipe-secure");
-            AgentUpdate.DataDir = TestEnvironment.NewDir("pipe-data");
-            TrayPipeServer.PipeName = "POpsTrayPipe-test-" + Guid.NewGuid().ToString("N").Substring(0, 8);
-            TrayPipeServer.ClientCheckOverride = _ => null;
-            SecureStore.WriteProtected(SecureStore.PathOf(AgentCredentials.BypassSecretFileName), FleetSecret);
-            _worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context)
+            SecureStore.WriteProtected(_agent.Paths.SecureFile(AgentCredentials.BypassSecretFileName), FleetSecret);
+            _worker = new Worker(NullLogger<Worker>.Instance, _agent.Context)
             {
                 HwId = HwId,
                 SendOverride = _ => Task.FromResult(false),   // sunucuya ulaşılamıyor
             };
             _worker.Quarantine = new QuarantineControl(
-                AgentHarness.FromStatics().Paths,
+                _agent.Paths,
                 message => { lock (_tray) _tray.Add(message); },
-                () => { File.WriteAllText(NetworkIsolation.StatePath, "{}"); return Task.FromResult(true); },
-                () => { File.Delete(NetworkIsolation.StatePath); return Task.FromResult(true); });
+                () => { File.WriteAllText(_agent.Paths.SecureFile(NetworkIsolation.StateFileName), "{}"); return Task.FromResult(true); },
+                () => { File.Delete(_agent.Paths.SecureFile(NetworkIsolation.StateFileName)); return Task.FromResult(true); },
+                _agent.Machine.Kiosk);
         }
 
         public void Dispose()
         {
             _worker.TrayPipe?.Stop();
             _worker.Dispose();
-            TrayPipeServer.PipeName = "POpsTrayPipe";
-            TrayPipeServer.ClientCheckOverride = null;
-            SecureStore.Dir = TestEnvironment.DefaultSecureDir;
-            AgentUpdate.DataDir = TestEnvironment.DefaultDataDir;
+            _agent.Dispose();
         }
 
         // Filo anahtarlı (eski) çevrimdışı kod: SHA-256(hw_id + anahtar + yerel tarih), ilk 6 hane
@@ -60,7 +57,7 @@ namespace POps.Tests.Agent
 
         private async Task<NamedPipeClientStream> ConnectTrayAsync()
         {
-            var client = new NamedPipeClientStream(".", TrayPipeServer.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+            var client = new NamedPipeClientStream(".", _agent.Machine.TrayPipe.Name, PipeDirection.InOut, PipeOptions.Asynchronous);
             await client.ConnectAsync(5000);
             _ = Task.Run(async () =>
             {

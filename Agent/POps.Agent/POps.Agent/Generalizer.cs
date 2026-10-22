@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.Versioning;
-using System.Security.Principal;
 using System.ServiceProcess;
 using POps.Shared;
 
@@ -27,12 +26,6 @@ namespace POpsAgent
         public const int ExitOk = 0, ExitIncomplete = 1, ExitNotAdmin = 2, ExitNotStopped = 3, ExitUsage = 4;
 
         private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(60);
-
-        // İşletim sistemi sınırları testlerde sahteleriyle değiştirilir
-        internal static Func<bool> IsAdministrator { get; set; } = () =>
-            new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator);
-        // Başarıda null, aksi halde neden
-        internal static Func<string> StopAgent { get; set; } = StopServiceAndWatchdog;
 
         public static bool IsRequested(string[] args) =>
             args != null && args.Any(a => string.Equals(a, Switch, StringComparison.OrdinalIgnoreCase));
@@ -57,21 +50,25 @@ namespace POpsAgent
             return true;
         }
 
-        // paths: servisin klasörleri (appsettings.json DataDirectory; bkz. AgentDirectories)
-        public static int Run(string[] args, TextWriter output, AgentPaths paths)
+        // paths: servisin klasörleri (appsettings.json DataDirectory; bkz. AgentDirectories). isAdministrator: komut yükseltilmiş
+        // mi; stopAgent: servisi ve watchdog'u durdurur (başarıda null, aksi halde neden). İşletim sistemi sınırları makine
+        // kapılarıdır (servis: MachineSeams.Production; testlerde sahteler).
+        public static int Run(string[] args, TextWriter output, AgentPaths paths, Func<bool> isAdministrator, Func<string> stopAgent)
         {
+            ArgumentNullException.ThrowIfNull(isAdministrator);
+            ArgumentNullException.ThrowIfNull(stopAgent);
             if (!TryParse(args, out string token, out string error))
             {
                 output.WriteLine(error);
                 output.WriteLine($"Kullanım: POpsAgent.exe {Switch} [{TokenSwitch} <jeton>]");
                 return ExitUsage;
             }
-            if (!IsAdministrator())
+            if (!isAdministrator())
             {
                 output.WriteLine("Yönetici olarak çalıştırın (yükseltilmiş komut istemi).");
                 return ExitNotAdmin;
             }
-            string stopError = StopAgent();
+            string stopError = stopAgent();
             if (stopError != null)
             {
                 output.WriteLine($"POpsAgent durdurulamadı, hiçbir dosyaya dokunulmadı: {stopError}");
@@ -135,10 +132,10 @@ namespace POpsAgent
         {
             yield return paths.IdentityPath;
             yield return paths.SecureFile(AgentCredentials.SecretFileName);
-            yield return AgentCredentials.PersistPath(AgentCredentials.SecretFileName);
+            yield return AgentCredentials.PersistPath(AgentCredentials.SecretFileName, paths.ConfigPaths);
             yield return paths.SecureFile(AgentCredentials.DeviceBypassSecretFileName);
             yield return paths.SecureFile(HardwareBinding.FileName);
-            yield return AgentCredentials.PersistPath(HardwareBinding.FileName);
+            yield return AgentCredentials.PersistPath(HardwareBinding.FileName, paths.ConfigPaths);
             yield return paths.SecureFile(ResultSpool.FileName);
             yield return paths.UpdateResultPath;
             yield return paths.ReportedResultPath;
@@ -154,7 +151,7 @@ namespace POpsAgent
 
         // Servis durdurulur; ardından watchdog kapatılır (yönetici oturumundaki watchdog servisi 10 sn içinde yeniden
         // başlatırdı). Arada yeniden başlatıldıysa servis bir kez daha durdurulur. Servis kurulu değilse sorun yok.
-        private static string StopServiceAndWatchdog()
+        internal static string StopServiceAndWatchdog()
         {
             try
             {

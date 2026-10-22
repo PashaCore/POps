@@ -17,27 +17,27 @@ namespace POps.Tests.Agent
     // taşımadan önce de aynı sonucu verir): tepsi bağlanınca gönderilenlerin sırası, tepsiden gelen mesajların etkisi ve
     // kopunca unutulanlar. Gerçek boru açılır (testlere özel ad); tepsinin yerine istemci doğrulamasını geçen sahte bir
     // istemci bağlanır. Sunucu yok: giden komut mesajları SendOverride'a yazılır.
-    [Collection(SharedStateCollection.Name)]
-    public class TrayMessageRouterTests : SharedStateTestBase, IDisposable
+    // Machine: gerçek tepsi borusu açılır, sahte tepsi bağlanır
+    [Collection(MachineCollection.Name)]
+    public class TrayMessageRouterTests : TestBase, IDisposable
     {
         private const string HwId = "HW-TRAY00000001";
 
+        private readonly AgentHarness _agent;
         private readonly Worker _worker;
         private readonly List<JsonElement> _sent = new List<JsonElement>();
         private readonly List<FakeTray> _trays = new List<FakeTray>();
 
         public TrayMessageRouterTests()
         {
-            SecureStore.Dir = TestEnvironment.NewDir("tray-router-secure");
-            AgentUpdate.DataDir = TestEnvironment.NewDir("tray-router-data");
-            TrayPipeServer.PipeName = "POpsTrayPipe-test-" + Guid.NewGuid().ToString("N").Substring(0, 8);
-            TrayPipeServer.ClientCheckOverride = _ => null;
             // Okunamayan yapılandırma: tepsi bağlanınca CONFIG_ERROR da gönderilir
             string config = Path.Combine(TestEnvironment.NewDir("tray-router-config"), "appsettings.json");
             File.WriteAllText(config, "{bozuk");
-            POpsHelpers.ConfigPaths = new[] { config };
-            AgentCapabilities.Load();   // dosya yok: hepsi açık
-            _worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context)
+            // Tepsi borusu: kurulu servisle çakışmayan ad, sahte tepsi denetlenmeden kabul edilir
+            _agent = AgentHarness.Create("tray-router", machine: new MachineSeams { Kiosk = new FakeKioskRegistry(), TrayPipe = AgentHarness.TestTrayPipe() },
+                configPaths: new[] { config });
+            _agent.Capabilities.Load();   // dosya yok: hepsi açık
+            _worker = new Worker(NullLogger<Worker>.Instance, _agent.Context)
             {
                 HwId = HwId,
                 SendOverride = p =>
@@ -54,17 +54,12 @@ namespace POps.Tests.Agent
             foreach (FakeTray tray in _trays) tray.Dispose();
             _worker.TrayPipe?.Stop();
             _worker.Dispose();
-            POpsHelpers.ConfigPaths = new string[0];
-            TrayPipeServer.PipeName = "POpsTrayPipe";
-            TrayPipeServer.ClientCheckOverride = null;
-            SecureStore.Dir = TestEnvironment.DefaultSecureDir;
-            AgentUpdate.DataDir = TestEnvironment.DefaultDataDir;
-            AgentCapabilities.Load();
+            _agent.Dispose();
         }
 
         private async Task<FakeTray> ConnectTrayAsync()
         {
-            FakeTray tray = await FakeTray.ConnectAsync(TrayPipeServer.PipeName);
+            FakeTray tray = await FakeTray.ConnectAsync(_agent.Machine.TrayPipe.Name);
             _trays.Add(tray);
             Assert.True(await FakeTray.WaitUntilAsync(() => _worker.TrayPipe.IsConnected), "tepsi bağlanmadı");
             return tray;
@@ -90,8 +85,8 @@ namespace POps.Tests.Agent
         [Fact]
         public async Task OnConnect_TheTrayGetsQuarantineExamHelpdeskConfigAndWaitingMessages_InThisOrder()
         {
-            SecureStore.WriteProtected(ExamMode.StatePath, "{\"message\":\"Matematik sınavı\",\"until\":null,\"allow\":[],\"block_apps\":[]}");
-            string exam = ExamHandler.ExamTrayMessage(ExamMode.Load());
+            SecureStore.WriteProtected(_worker.Exam.StatePath, "{\"message\":\"Matematik sınavı\",\"until\":null,\"allow\":[],\"block_apps\":[]}");
+            string exam = ExamHandler.ExamTrayMessage(_worker.Exam.Load());
             string config = _worker.ConfigErrorMessage();
             Assert.NotNull(config);
 

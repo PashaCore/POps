@@ -29,10 +29,8 @@ namespace POps.Tests.Agent
 
         public ProtocolVectorTests()
         {
-            SecureStore.Dir = TestEnvironment.NewDir("protocol-secure");
-            AgentUpdate.DataDir = TestEnvironment.NewDir("protocol-data");
-            AgentCapabilities.Load();
-            _agent = AgentHarness.FromStatics();
+            _agent = AgentHarness.Create("protocol");
+            _agent.Capabilities.Load();
             _worker = new Worker(NullLogger<Worker>.Instance, _agent.Context)
             {
                 HwId = "HW-3F9A1C7B2E4D",
@@ -42,19 +40,21 @@ namespace POps.Tests.Agent
                     return Task.FromResult(true);
                 },
             };
-            _worker.Binding = new HardwareBinding(AgentHarness.FromStatics().Paths, () => ("4C4C4544-0042-3510-8051-B3C04F4D3132", "B3C0MD2"));
-            _worker.Quarantine = new QuarantineControl(AgentHarness.FromStatics().Paths, _ => { },
-                () => { File.WriteAllText(NetworkIsolation.StatePath, "{}"); return Task.FromResult(true); },
-                () => { File.Delete(NetworkIsolation.StatePath); return Task.FromResult(true); });
+            _worker.Binding = new HardwareBinding(_agent.Paths, () => ("4C4C4544-0042-3510-8051-B3C04F4D3132", "B3C0MD2"));
+            _worker.Quarantine = new QuarantineControl(_agent.Paths, _ => { },
+                () => { File.WriteAllText(_agent.Paths.SecureFile(NetworkIsolation.StateFileName), "{}"); return Task.FromResult(true); },
+                () => { File.Delete(_agent.Paths.SecureFile(NetworkIsolation.StateFileName)); return Task.FromResult(true); },
+                _agent.Machine.Kiosk);
         }
 
         public void Dispose()
         {
             _worker.Dispose();
-            SecureStore.Dir = TestEnvironment.DefaultSecureDir;
-            AgentUpdate.DataDir = TestEnvironment.DefaultDataDir;
-            AgentCapabilities.Load();
+            _agent.Dispose();
         }
+
+        // Worker'ın eş önbelleği (bağlamın güncelleme durumunun parçası)
+        private PeerCache PeerCache => _agent.Updater.PeerCache;
 
         private static string Protocol(params string[] parts) =>
             Path.Combine(new[] { TestEnvironment.RepoRoot(), "docs", "protocol" }.Concat(parts).ToArray());
@@ -67,19 +67,19 @@ namespace POps.Tests.Agent
             lock (_sent) return _sent.Where(m => type == null || (m.TryGetProperty("type", out var t) && t.GetString() == type)).ToList();
         }
 
-        private static void CapabilitiesOff()
+        private void CapabilitiesOff()
         {
-            SecureStore.WriteProtected(SecureStore.PathOf(AgentCapabilities.FileName), "{\"terminal_enabled\":false,\"vision_enabled\":false}");
-            AgentCapabilities.Load();
+            SecureStore.WriteProtected(_agent.Paths.SecureFile(AgentCapabilities.FileName), "{\"terminal_enabled\":false,\"vision_enabled\":false}");
+            _agent.Capabilities.Load();
         }
 
         private void ModulesOff() =>
             _agent.Modules.Apply(JsonDocument.Parse("{\"modules\":{\"patches\":false,\"wol\":false}}").RootElement);
 
-        private static void PowerAndMessageOff()
+        private void PowerAndMessageOff()
         {
-            SecureStore.WriteProtected(SecureStore.PathOf(AgentCapabilities.FileName), "{\"power_enabled\":false,\"message_enabled\":false}");
-            AgentCapabilities.Load();
+            SecureStore.WriteProtected(_agent.Paths.SecureFile(AgentCapabilities.FileName), "{\"power_enabled\":false,\"message_enabled\":false}");
+            _agent.Capabilities.Load();
         }
 
         // ------------------------------------------------------------------ 1. sunucu -> ajan vektörleri
@@ -113,7 +113,7 @@ namespace POps.Tests.Agent
                     Assert.True(_worker.Handshake.Supports(UpdateResultReporter.AckFeature));
                     break;
                 case "set_secret":
-                    Assert.Equal(vector.GetProperty("secret").GetString(), AgentCredentials.CurrentSecret);
+                    Assert.Equal(vector.GetProperty("secret").GetString(), _agent.Credentials.CurrentSecret);
                     break;
                 case "set_identity":
                     Assert.Equal("HW-9B41D07E5A2C", _worker.HwId);
@@ -132,11 +132,11 @@ namespace POps.Tests.Agent
                     Assert.Empty(Sent());
                     break;
                 case "lockdown":
-                    Assert.True(File.Exists(NetworkIsolation.StatePath));
+                    Assert.True(File.Exists(_agent.Paths.SecureFile(NetworkIsolation.StateFileName)));
                     break;
                 case "set_capabilities":
-                    Assert.False(AgentCapabilities.TerminalEnabled);
-                    if (vector.TryGetProperty("vision_enabled", out _)) Assert.False(AgentCapabilities.VisionEnabled);
+                    Assert.False(_agent.Capabilities.TerminalEnabled);
+                    if (vector.TryGetProperty("vision_enabled", out _)) Assert.False(_agent.Capabilities.VisionEnabled);
                     Assert.Single(Sent("capabilities"));
                     break;
                 case "remote_input" or "start_stream" or "start_vision_session":
@@ -281,7 +281,7 @@ namespace POps.Tests.Agent
         }
 
         [Fact]
-        public void Capabilities_MatchItsSchema() => AssertMatches("capabilities", JsonSerializer.SerializeToElement(AgentCapabilities.StatusMessage()));
+        public void Capabilities_MatchItsSchema() => AssertMatches("capabilities", JsonSerializer.SerializeToElement(_agent.Capabilities.StatusMessage()));
 
         private async Task<(JsonElement Result, JsonElement Denied)> RefusedExecute()
         {
@@ -298,16 +298,16 @@ namespace POps.Tests.Agent
             AssertMatches("capability_denied", denied);
         }
 
-        private static JsonElement UpdateResult()
+        private JsonElement UpdateResult()
         {
-            Directory.CreateDirectory(AgentUpdate.DataDir);
-            File.WriteAllText(AgentUpdate.ResultPath, JsonSerializer.Serialize(new
+            Directory.CreateDirectory(_agent.Paths.DataDir);
+            File.WriteAllText(_agent.Paths.UpdateResultPath, JsonSerializer.Serialize(new
             {
                 schema = "pops-update-result/1", from_version = "0.1.20-alpha", to_version = "0.1.21-alpha", started_at = 1791200000,
                 rollback = "none", msi_exit_code = 0, reboot_required = false, agent_state = "running", running_version = "0.1.21-alpha",
                 outcome = "success", finished_at = 1791200120,
             }));
-            return JsonSerializer.SerializeToElement(AgentUpdate.PendingResultMessage());
+            return JsonSerializer.SerializeToElement(AgentUpdate.PendingResultMessage(_agent.Paths));
         }
 
         [Fact]
@@ -343,7 +343,7 @@ namespace POps.Tests.Agent
             Assert.Equal(Keys(Example("agent-to-server", "heartbeat.first.json")), Keys(Heartbeat(withDna: true)));
             // Bugünkü ajan files_enabled, exam_enabled, power_enabled, message_enabled ve peer_cache_enabled da bildirir;
             // capabilities.default.json daha eski ajanların (ve Linux ajanının) iletisidir
-            Assert.Equal(Keys(Example("agent-to-server", "capabilities.files.json")), Keys(JsonSerializer.SerializeToElement(AgentCapabilities.StatusMessage())));
+            Assert.Equal(Keys(Example("agent-to-server", "capabilities.files.json")), Keys(JsonSerializer.SerializeToElement(_agent.Capabilities.StatusMessage())));
             Assert.Equal(Keys(Example("agent-to-server", "update_result.success.json")), Keys(UpdateResult()));
             Assert.Equal(Keys(Example("agent-to-server", "update_progress.json")), Keys(Progress()));
             var (result, denied) = await RefusedExecute();

@@ -21,18 +21,19 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // update_progress: update_agent ile update_result arasındaki aşamalar (servis ve updater -> servis dosyası)
-    [Collection(SharedStateCollection.Name)]
-    public class UpdateProgressTests : SharedStateTestBase, IDisposable
+    // Machine: güncellemenin eş önbelleği sunucusu (TcpListener) IL'den ulaşılabilir
+    [Collection(MachineCollection.Name)]
+    public class UpdateProgressTests : TestBase, IDisposable
     {
         private const string MsiName = "POps-Agent-9.9.9-win-x64.msi";
         private readonly List<Dictionary<string, object>> _stages = new List<Dictionary<string, object>>();
         private readonly Ed25519PrivateKeyParameters _key;
         private readonly byte[] _package = RandomNumberGenerator.GetBytes(4096);
+        // Testin ajanı (klasörler; BITS kapalı, updater başlatılmaz: makine kapıları reddeder)
+        private readonly AgentHarness _agent = AgentHarness.Create("progress");
 
         public UpdateProgressTests()
         {
-            AgentUpdate.DataDir = TestEnvironment.NewDir("progress-data");
-            SecureStore.Dir = TestEnvironment.NewDir("progress-secure");
             var generator = new Ed25519KeyPairGenerator();
             generator.Init(new Ed25519KeyGenerationParameters(new SecureRandom()));
             var pair = generator.GenerateKeyPair();
@@ -45,13 +46,9 @@ namespace POps.Tests.Agent
         private readonly string _trustedKey;
         private Func<string, string, string, bool> _launch = (_, _, _) => true;
         private AgentUpdater _updater;
-        private AgentUpdater Updater => _updater ??= new AgentUpdater(AgentHarness.FromStatics().Paths, "0.1.22-alpha", _trustedKey, _launch);
+        private AgentUpdater Updater => _updater ??= _agent.NewUpdater("0.1.22-alpha", _trustedKey, _launch);
 
-        public void Dispose()
-        {
-            AgentUpdate.DataDir = TestEnvironment.DefaultDataDir;
-            SecureStore.Dir = TestEnvironment.DefaultSecureDir;
-        }
+        public void Dispose() => _agent.Dispose();
 
         private sealed class Server : HttpMessageHandler
         {
@@ -127,7 +124,7 @@ namespace POps.Tests.Agent
             new object[] { "bad-sha", new[] { "received", "rejected" }, "özet ya da boyut" },
             new object[] { "http-404", new[] { "received", "rejected" }, "HTTP 404" },
             new object[] { "size-mismatch", new[] { "received", "downloaded", "rejected" }, "uyuşmuyor" },
-            new object[] { "updater-missing", new[] { "received", "downloaded", "verified", "rejected" }, "POpsUpdater kopyalanamıyor" },
+            new object[] { "updater-missing", new[] { "received", "downloaded", "verified", "rejected" }, "POpsUpdater başlatılmadı" },
             new object[] { "exception", new[] { "received", "rejected" }, "Güncelleme hazırlanamadı" },
         };
 
@@ -153,7 +150,7 @@ namespace POps.Tests.Agent
                 case "bad-sha": command = Command(artifacts: new object[] { new { name = MsiName, sha256 = "abc", size = _package.Length } }); break;
                 case "http-404": http = Serving(Array.Empty<byte>(), HttpStatusCode.NotFound); break;
                 case "size-mismatch": http = Serving(_package.Take(100).ToArray()); break;
-                case "updater-missing": _launch = null; break;   // test klasöründe POpsUpdater.deps.json yok
+                case "updater-missing": _launch = null; break;   // makine kapısı: testlerde updater başlatılmaz, reddedilir
                 case "exception":
                     http = new HttpClient(new Server { Respond = _ => throw new HttpRequestException("sunucuya ulaşılamadı") });
                     break;
@@ -169,7 +166,7 @@ namespace POps.Tests.Agent
         [Fact]
         public async Task FreshLock_SendsIgnoredBusy_WithTheVersionInProgress_AndNoReceived()
         {
-            File.WriteAllText(AgentUpdate.LockPath, "{\"from_version\":\"0.1.21-alpha\",\"to_version\":\"0.1.22-alpha\",\"started_at\":1791200000}");
+            File.WriteAllText(_agent.Paths.UpdateLockPath, "{\"from_version\":\"0.1.21-alpha\",\"to_version\":\"0.1.22-alpha\",\"started_at\":1791200000}");
             await Run(Command(), Serving(_package));
             Assert.Equal(new[] { "ignored_busy" }, Stages());
             Assert.Equal("0.1.22-alpha", Stage("ignored_busy")["to_version"]);
@@ -217,7 +214,7 @@ namespace POps.Tests.Agent
         [Fact]
         public void ProgressFile_RoundTrip_AndOnlyUpdaterStages()
         {
-            string path = AgentUpdate.ProgressPath;
+            string path = _agent.Paths.UpdateProgressPath;
             var record = new UpdateProgressRecord { Run = 1791200000, ToVersion = "0.1.22-alpha", Stage = UpdateProgressFile.WaitingInstaller, Attempt = 2, Of = 5, Detail = "msiexec 1618", At = 1791200123 };
             UpdateProgressFile.Write(path, record);
             Assert.False(File.Exists(path + ".tmp"));
@@ -232,7 +229,7 @@ namespace POps.Tests.Agent
             Assert.Null(UpdateProgressFile.Parse("{\"schema\":\"pops-update-progress/1\",\"run\":1,\"stage\":\"received\"}"));
             Assert.Null(UpdateProgressFile.Parse("{\"schema\":\"x\",\"run\":1,\"stage\":\"installing\"}"));
             Assert.Null(UpdateProgressFile.Parse("{bozuk"));
-            Assert.Null(UpdateProgressFile.Read(Path.Combine(AgentUpdate.DataDir, "yok.json")));
+            Assert.Null(UpdateProgressFile.Read(Path.Combine(_agent.Paths.DataDir, "yok.json")));
         }
 
         // ------------------------------------------------------------------ servis: iletici
@@ -240,7 +237,7 @@ namespace POps.Tests.Agent
 
         private Worker NewWorker(bool feature = true)
         {
-            var worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context)
+            var worker = new Worker(NullLogger<Worker>.Instance, _agent.Context)
             {
                 HwId = "HW-PROG",
                 SendOverride = payload => { lock (_sent) _sent.Add(JsonSerializer.SerializeToElement(payload)); return Task.FromResult(true); },
@@ -257,8 +254,8 @@ namespace POps.Tests.Agent
 
         private void Updating(long run = Run1, string stage = UpdateProgressFile.WaitingInstaller, int attempt = 2, long at = 1791200123)
         {
-            File.WriteAllText(AgentUpdate.LockPath, "{\"from_version\":\"0.1.21-alpha\",\"to_version\":\"0.1.22-alpha\",\"started_at\":" + Run1 + "}");
-            UpdateProgressFile.Write(AgentUpdate.ProgressPath, new UpdateProgressRecord
+            File.WriteAllText(_agent.Paths.UpdateLockPath, "{\"from_version\":\"0.1.21-alpha\",\"to_version\":\"0.1.22-alpha\",\"started_at\":" + Run1 + "}");
+            UpdateProgressFile.Write(_agent.Paths.UpdateProgressPath, new UpdateProgressRecord
             {
                 Run = run, ToVersion = "0.1.22-alpha", Stage = stage, Attempt = attempt, Of = 5, Detail = "msiexec 1618: başka bir Windows Installer kurulumu sürüyor", At = at,
             });
@@ -328,27 +325,27 @@ namespace POps.Tests.Agent
             Assert.Empty(Forwarded());
 
             Updating();
-            File.WriteAllText(AgentUpdate.ResultPath, "{\"schema\":\"pops-update-result/1\"}");
+            File.WriteAllText(_agent.Paths.UpdateResultPath, "{\"schema\":\"pops-update-result/1\"}");
             await worker.ForwardUpdateProgressAsync();
             Assert.Empty(Forwarded());
-            File.Delete(AgentUpdate.ResultPath);
+            File.Delete(_agent.Paths.UpdateResultPath);
 
             Updating();
-            File.SetLastWriteTimeUtc(AgentUpdate.LockPath, DateTime.UtcNow.AddHours(-1));   // kilit bayat
+            File.SetLastWriteTimeUtc(_agent.Paths.UpdateLockPath, DateTime.UtcNow.AddHours(-1));   // kilit bayat
             await worker.ForwardUpdateProgressAsync();
             Assert.Empty(Forwarded());
-            Assert.False(File.Exists(AgentUpdate.ProgressPath));
+            Assert.False(File.Exists(_agent.Paths.UpdateProgressPath));
         }
 
         [Fact]
         public void Startup_RemovesALeftoverProgressFile_OnlyWhenNoUpdateRuns()
         {
             Updating();
-            AgentUpdate.CleanupStaleProgress();
-            Assert.True(File.Exists(AgentUpdate.ProgressPath));
-            File.Delete(AgentUpdate.LockPath);
-            AgentUpdate.CleanupStaleProgress();
-            Assert.False(File.Exists(AgentUpdate.ProgressPath));
+            AgentUpdate.CleanupStaleProgress(_agent.Paths);
+            Assert.True(File.Exists(_agent.Paths.UpdateProgressPath));
+            File.Delete(_agent.Paths.UpdateLockPath);
+            AgentUpdate.CleanupStaleProgress(_agent.Paths);
+            Assert.False(File.Exists(_agent.Paths.UpdateProgressPath));
         }
     }
 }

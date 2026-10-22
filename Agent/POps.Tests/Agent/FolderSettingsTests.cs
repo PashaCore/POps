@@ -13,10 +13,13 @@ namespace POps.Tests.Agent
 {
     // appsettings.json LogDirectory / DataDirectory: değer kuralları, varsayılana dönüş ve bildirim, klasör izinleri,
     // servis / updater / watchdog'un aynı klasörleri seçmesi. Klasörler hep geçici test klasöründe.
-    [Collection(SharedStateCollection.Name)]
-    public class FolderSettingsTests : SharedStateTestBase, IDisposable
+    // Machine: Worker'ın eş önbelleği sunucusu (TcpListener) IL'den ulaşılabilir
+    [Collection(MachineCollection.Name)]
+    public class FolderSettingsTests : TestBase
     {
         private readonly string _root = TestEnvironment.NewDir("folders");
+        // Servisin ayar dosyaları (bkz. Config; yoksa hiç dosya yok)
+        private string[] _config = new string[0];
         private readonly string _defaultData;
         private readonly string _defaultLog;
 
@@ -34,14 +37,6 @@ namespace POps.Tests.Agent
             _defaultLog = Path.Combine(_root, "default-logs");
         }
 
-        public void Dispose()
-        {
-            POpsHelpers.ConfigPaths = new string[0];
-            AgentUpdate.DataDir = TestEnvironment.DefaultDataDir;
-            SecureStore.Dir = TestEnvironment.DefaultSecureDir;
-            POpsHelpers.MachineLogDir = TestEnvironment.DefaultMachineLogDir;
-        }
-
         // Üst klasör denetimi test klasöründe durur (kullanıcı profilinin izinleri makineden makineye değişir)
         private FolderRules Rules() => new FolderRules { TrustedBase = _root };
 
@@ -51,7 +46,7 @@ namespace POps.Tests.Agent
         {
             string path = Path.Combine(TestEnvironment.NewDir("folders-config"), "appsettings.json");
             File.WriteAllText(path, JsonSerializer.Serialize(settings));
-            POpsHelpers.ConfigPaths = new[] { path };
+            _config = new[] { path };
         }
 
         private static FileSystemAccessRule[] AclRules(string dir) =>
@@ -288,13 +283,13 @@ namespace POps.Tests.Agent
             string data = Dir("D", "POpsData"), logs = Dir("E", "POpsLogs");
             Config(new { ServerUrl = "https://pops.example", DataDirectory = data, LogDirectory = logs });
 
-            (FolderSettings service, AgentPaths paths) = AgentDirectories.Apply(secure: true, Rules(), _defaultData, _defaultLog);
+            (FolderSettings service, AgentPaths paths) = AgentDirectories.Apply(secure: true, _config, Rules(), _defaultData, _defaultLog);
             Assert.Null(paths.FolderProblem);
-            Assert.Equal(data, AgentUpdate.DataDir);
-            Assert.Equal(Path.Combine(data, "secure"), SecureStore.Dir);
+            Assert.Equal(data, paths.DataDir);
+            Assert.Equal(Path.Combine(data, "secure"), paths.SecureDir);
             Assert.Equal(Path.Combine(data, "secure", ServerTrust.FileName), paths.ServerCaPath);
-            Assert.Equal(Path.Combine(data, "identity.key"), AgentUpdate.IdentityPath);
-            Assert.Equal(logs, POpsHelpers.MachineLogDir);
+            Assert.Equal(Path.Combine(data, "identity.key"), paths.IdentityPath);
+            Assert.Equal(logs, paths.LogDir);
             Assert.True(new DirectoryInfo(data).GetAccessControl().AreAccessRulesProtected);
             Assert.True(new DirectoryInfo(logs).GetAccessControl().AreAccessRulesProtected);
             Assert.False(Directory.Exists(_defaultData));
@@ -325,9 +320,9 @@ namespace POps.Tests.Agent
         public void InvalidSetting_IsReportedAsAConfigProblem_ButNotInTheTray()
         {
             Config(new { ServerUrl = "https://pops.example", DataDirectory = @"\\server\share\POps", LogDirectory = "logs" });
-            AgentPaths paths = AgentDirectories.Apply(secure: true, Rules(), _defaultData, _defaultLog).Paths;
-            Assert.Equal(_defaultData, AgentUpdate.DataDir);
-            Assert.Equal(_defaultLog, POpsHelpers.MachineLogDir);
+            AgentPaths paths = AgentDirectories.Apply(secure: true, _config, Rules(), _defaultData, _defaultLog).Paths;
+            Assert.Equal(_defaultData, paths.DataDir);
+            Assert.Equal(_defaultLog, paths.LogDir);
             Assert.Contains("DataDirectory geçersiz", paths.FolderProblem);
             Assert.Contains("LogDirectory geçersiz (logs)", paths.FolderProblem);
 
@@ -347,8 +342,8 @@ namespace POps.Tests.Agent
         public void NonTextSetting_IsAProblem()
         {
             Config(new { ServerUrl = "https://pops.example", DataDirectory = 5 });
-            AgentPaths paths = AgentDirectories.Apply(secure: false, Rules(), _defaultData, _defaultLog).Paths;
-            Assert.Equal(_defaultData, AgentUpdate.DataDir);
+            AgentPaths paths = AgentDirectories.Apply(secure: false, _config, Rules(), _defaultData, _defaultLog).Paths;
+            Assert.Equal(_defaultData, paths.DataDir);
             Assert.Contains("DataDirectory bir metin", paths.FolderProblem);
         }
     }
