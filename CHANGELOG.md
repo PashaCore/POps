@@ -45,6 +45,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Panel: the running version after a manual install.** The server stored the running version only from an
+  update result, so a PC whose agent was installed or downgraded by hand kept showing the old version. The version
+  the agent announces when it connects is now stored as well (#197, found in the 0.1.24 field test).
+- **winget: "different install technology" is a failure.** winget answers `0x8A15002B` both for "already up to
+  date" and when the requested version uses another install technology than the installed one (for example an MSI
+  over an exe install). In the second case nothing was installed but the task showed **Tamamlandı**; it is now
+  **Başarısız** (#197).
+- **Agent uninstall log.** The firewall clean-up script no longer lets PowerShell progress records split the result
+  line in the MSI log (#197).
 - **Agent: uninstalling removes every POps firewall rule.** The MSI's uninstall deletes the quarantine, exam mode and
   peer cache rules (and the unnamed rules of agents before 0.1.4), turns the firewall profiles that were off before a
   quarantine or exam back off, and deletes the quarantine and exam state files. A PC uninstalled during a quarantine
