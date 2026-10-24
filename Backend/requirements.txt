@@ -2,7 +2,7 @@
 # (CI ikisini de sınar; 3.9 neden bırakıldı: docs/decisions.md D-20).
 # Aşağıdaki satırı pops-deploy-backend ve install.sh okur: venv'in Python'u daha eskiyse deploy yeni bir venv kurar.
 # requires-python: >=3.10
-fastapi==0.143.0
+fastapi==0.156.4
 # FastAPI'nin alt sınırı (>=0.46) eski, açığı olan Starlette'e izin verir; düzeltmeli sürüm burada sabitlenir.
 starlette==1.7.0
 uvicorn[standard]==0.54.0
