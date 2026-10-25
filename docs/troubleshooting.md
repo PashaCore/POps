@@ -276,6 +276,27 @@ signed updates; install the MSI on them once.
   skipped ones (`skipped_offline`). Results arrive when the agent reports them; the page reloads the list 15 seconds
   after sending.
 
+## Reports
+
+- **A CSV export opens in a single column.** POps exports CSV files with a UTF-8 byte-order mark (BOM) and
+  semicolon (`;`) delimiters, which matches Turkish Windows regional settings and displays Turkish characters
+  properly in Excel. If your spreadsheet application or Windows regional setting uses a comma (`,`) as the list
+  separator (such as English (United States)), opening the `.csv` file directly puts each entire row into one
+  column.
+  - **Microsoft Excel**:
+    1. Open a blank workbook.
+    2. Go to **Data → From Text/CSV** (or **Data → Get Data → From File → From Text/CSV**).
+    3. Select the exported `.csv` file and click **Import**.
+    4. In the preview window, ensure **File Origin** is set to `65001: Unicode (UTF-8)` and set **Delimiter** to
+       **Semicolon**.
+    5. Click **Load**.
+    *(Alternatively, on an already opened sheet, select column A, go to **Data → Text to Columns**, choose **Delimited**,
+    tick **Semicolon**, and click **Finish**.)*
+  - **LibreOffice Calc**:
+    1. Open the `.csv` file. In the **Text Import** dialog that appears:
+    2. Under **Separator Options**, uncheck **Comma** and check **Semicolon**.
+    3. Ensure **Character Set** is set to `Unicode (UTF-8)` and click **OK**.
+
 ## Licences
 
 - **A licence shows 0 installed.**

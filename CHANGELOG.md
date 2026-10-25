@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   firewall profiles), an upgrade during a quarantine, an update with a pinned CA (no BITS) and the lab peer cache
   (good peer, wrong bytes, peer outside the subnet). The first run of 0.1.24's agent: 11 passed, 2 skipped (lock and
   sign-out would end the runner's own session), 0 failed. See `docs/testing.md`.
+- **Docs: CSV export troubleshooting for single-column imports (#74).** The troubleshooting guide documents why
+  semicolon-delimited UTF-8 CSV exports open into a single column on systems using comma separators (e.g. English Windows)
+  and how to import them in Excel and LibreOffice Calc. The spreadsheet export FAQ links to the new entry.
 
 ### Changed
 

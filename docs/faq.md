@@ -145,4 +145,4 @@ The PostgreSQL database, the backend `.env` and `Backend/storage/` ([`database.m
 
 **Can I export data to a spreadsheet?**
 Yes. **Raporlar** → the download icon (**CSV olarak indir**) exports devices, software, Windows update state, licences or events as CSV
-(semicolon-separated, UTF-8 with a byte-order mark so that Excel shows Turkish characters correctly).
+(semicolon-separated, UTF-8 with a byte-order mark so that Excel shows Turkish characters correctly). If the file opens into a single column in your spreadsheet software, see [Troubleshooting: Reports](troubleshooting.md#reports).
