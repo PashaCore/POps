@@ -339,6 +339,12 @@ def main():
     for kind in ("devices", "patches", "events"):
         s, txt = req("/api/reports/export?kind=%s" % kind, ad, raw=True)
         chk(s == 200 and txt.startswith("﻿"), "CSV: %s" % kind)
+        if kind == "devices":
+            dev_header = txt.lstrip("﻿").splitlines()[0].split(";")
+            chk(
+                dev_header[-2:] == ["terminal_enabled", "vision_enabled"],
+                "devices CSV header ends with terminal_enabled and vision_enabled",
+            )
     chk(req("/api/reports/export?kind=users", ad)[0] == 400, "bilinmeyen rapor türü → 400")
 
     print("== ajanın bildirdiği karantina durumu")

@@ -160,11 +160,14 @@ async def report_export(kind: str, days: int = 30, auth: dict = Depends(require_
             "pending_updates",
             "pending_security",
             "reboot_required",
+            "terminal_enabled",
+            "vision_enabled",
         ]
         rows = await execute_query(
             "SELECT c.pc_name, c.hostname, c.display_name, c.lab_name, c.status, c.last_seen, av.version, "
             "(s.pc_name IS NOT NULL), c.is_quarantined, h.os_version, h.cpu, h.ram, c.ip_address, "
-            "p.pending_count, p.pending_security, p.reboot_required "
+            "p.pending_count, p.pending_security, p.reboot_required, "
+            "c.cap_terminal_enabled, c.cap_vision_enabled "
             "FROM clients c LEFT JOIN agent_versions av ON av.pc_name = c.pc_name "
             "LEFT JOIN agent_secrets s ON s.pc_name = c.pc_name LEFT JOIN hw_inventory h ON h.pc_name = c.pc_name "
             "LEFT JOIN device_patch_status p ON p.pc_name = c.pc_name WHERE " + tenancy.lab_sql(org, "c.lab_name", args)

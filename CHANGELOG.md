@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Backend: terminal and Vision capability columns in the devices CSV export (#73).** The devices report export
+  ends with `terminal_enabled` and `vision_enabled` so administrators can audit disabled capabilities across devices.
 - **CI: Windows end-to-end test of the agent on a throwaway runner (#203).** On every release tag (and on demand) a
   fresh Windows machine builds two agent versions with a throwaway signing key, runs the backend with a test CA and
   checks what cannot be tried on a real school PC without risk: a refused shutdown or restart, an exam with the clock
