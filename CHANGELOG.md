@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Server: `pops-restore --list` displays available backups (#111).** An operator can inspect existing backups under
+  `BACKUP_DIR` (default `/var/backups/pops`) without root, seeing folder names (newest first), creation dates, versions,
+  sizes, and restorable status (marking `.failed` or corrupted folders as not restorable).
 - **CI: Windows end-to-end test of the agent on a throwaway runner (#203).** On every release tag (and on demand) a
   fresh Windows machine builds two agent versions with a throwaway signing key, runs the backend with a test CA and
   checks what cannot be tried on a real school PC without risk: a refused shutdown or restart, an exam with the clock

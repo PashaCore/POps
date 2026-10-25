@@ -73,7 +73,7 @@ folder is copied there after it is verified. Any other off-site method that copi
 
 ## Restore
 
-List backups: `ls /var/backups/pops/`. Check one without touching anything: `sudo pops-restore --check <folder>`.
+List backups: `pops-restore --list` (or `ls /var/backups/pops/`). It works without root, showing folder names, dates, versions, sizes and whether each backup is restorable. Check one without touching anything: `sudo pops-restore --check <folder>`.
 
 ### Wrong change on a working server (for example deleted devices)
 

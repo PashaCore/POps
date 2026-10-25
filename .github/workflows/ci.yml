@@ -576,6 +576,7 @@ jobs:
           grep -q '"verified":true' "$RUNNER_TEMP/backups/status.json"
           FIRST=$(ls -d "$RUNNER_TEMP"/backups/20*Z | head -1)
           tar -tzf "$FIRST/files.tgz" | grep -q 'storage/ci.txt'
+          Installer/server/pops-restore --list | grep -q "$(basename "$FIRST")"
 
           echo "== bozuk özet reddedilmeli"
           cp -a "$FIRST" "$RUNNER_TEMP/tampered-copy"
@@ -670,8 +671,10 @@ jobs:
           # Uyarı ve hatalar kırar; "info" ve "style" notları (ör. SC2015, sürüme göre değişir) yalnızca raporlanır
           shellcheck --severity=info Installer/server/install.sh Installer/server/tests/*.sh "${scripts[@]}" docker/dashboard-entrypoint.sh Backend/tests/run_local.sh || true
           shellcheck --severity=warning Installer/server/install.sh Installer/server/tests/*.sh "${scripts[@]}" docker/dashboard-entrypoint.sh Backend/tests/run_local.sh
-      - name: Deploy and self-update tests
-        run: bash Installer/server/tests/test_deploy.sh
+      - name: Deploy, self-update and restore tests
+        run: |
+          bash Installer/server/tests/test_deploy.sh
+          bash Installer/server/tests/test_restore.sh
 
   signing:
     name: Release signing tool
