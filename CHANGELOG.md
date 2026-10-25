@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   firewall profiles), an upgrade during a quarantine, an update with a pinned CA (no BITS) and the lab peer cache
   (good peer, wrong bytes, peer outside the subnet). The first run of 0.1.24's agent: 11 passed, 2 skipped (lock and
   sign-out would end the runner's own session), 0 failed. See `docs/testing.md`.
+- **CI: check relative links and anchors in Markdown files (#76).** `.github/scripts/check_md_links.py` verifies
+  in the `version` job that relative links, image sources and heading `#anchors` across all git-tracked Markdown
+  files resolve to existing files and valid anchors, and fixes broken heading anchors.
 
 ### Changed
 

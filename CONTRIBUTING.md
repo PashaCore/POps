@@ -302,6 +302,9 @@ python Backend/migrate.py                    # must apply nothing
 - **Agent** projects build without warnings (warnings are errors outside the `Agent/.editorconfig` baseline), only
   the files in `tools/nullable_baseline.txt` turn nullable off (`tools/check_nullable_baseline.py`) and the unit
   tests pass.
+- **Markdown links and anchors:** every relative link, image path and `#anchor` across all git-tracked Markdown files
+  must resolve to an existing file and valid heading (`.github/scripts/check_md_links.py`). Run locally with
+  `python3 .github/scripts/check_md_links.py`.
 
 ### Enforced by review
 

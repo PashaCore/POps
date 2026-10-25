@@ -852,7 +852,7 @@ over the pipe; the service adds the user of the tray's session as the reporter, 
 description 5000 characters) and the request rate (list every 6 s, new request every 10 s, one at a time), and
 calls `POST /api/tickets/agent/{hw_id}`. **Taleplerim** reads `GET /api/tickets/agent/{hw_id}` and
 shows only the signed-in user's requests, because a lab PC is shared. New replies are checked every 5 minutes and
-shown as a balloon. Details in [`Agent/README.md`](../Agent/README.md#help-desk-sorun-bildir--taleplerim).
+shown as a balloon. Details in [`Agent/README.md`](../Agent/README.md#help-desk-sorun-bildir-taleplerim).
 
 From 0.1.9-alpha the tray menu also has **Etkinlik geçmişim**: what IT administrators did on this PC in the last
 30 days (remote sessions, commands, quarantine, updates, capability changes, Windows Update, enrolment). The tray

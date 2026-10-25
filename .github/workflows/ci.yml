@@ -111,7 +111,7 @@ jobs:
       - name: Lint with flake8
         # Tam kapı: repo kökündeki .flake8 (max-line-length 120). Backend, Linux ajanı ve araçlar (tools/, README çizimleri) temiz tutulur; yeni uyarı CI'ı kırar.
         if: matrix.python == '3.12'
-        run: flake8 Backend/ Agent-Linux/ tools/ assets/readme/ fuzz/ --count --show-source --statistics
+        run: flake8 Backend/ Agent-Linux/ tools/ assets/readme/ fuzz/ .github/scripts/ --count --show-source --statistics
       - name: Import smoke test
         # Modül yüklenirken zorunlu ortam değişkenleri okunur; veritabanına bağlanılmaz. (FastAPI dahil edilen
         # router'ları artık iç içe tutar; app.routes uç sayısını vermez.)
@@ -401,6 +401,9 @@ jobs:
         # Belgeler (README, ROADMAP, docs/, sürüm notu) sürümü, Python/PostgreSQL alt sınırını ve ajanın .NET'ini
         # tek kaynaklardan (VERSION, requirements.txt, migrations işi, csproj) farklı söylemesin. setup-python gerekmez.
         run: python3 tools/check_docs_versions.py
+      - name: Check relative Markdown links and anchors
+        # Belgeler arasındaki göreceli bağlantılar ve başlık çapaları kırılmasın (#76).
+        run: python3 .github/scripts/check_md_links.py
       - name: Nullable baseline only shrinks
         # Ajanın ürün projelerinde "#nullable disable" taşıyan dosyalar tools/nullable_baseline.txt'deki sabit listeyle
         # aynı olmalı: yeni dosya nullable açısından temiz olmalı, temizlenen dosyanın satırı listeden silinir.

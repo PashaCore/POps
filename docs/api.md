@@ -316,7 +316,7 @@ forward does not change it. How the server tracks it: [`backend.md`](backend.md#
   that device's next real change or, at the latest, a minute later in `seen`. The panel shows `last_seen` only for
   offline devices, whose value no longer moves.
 - **Push.** When the version changes, panel sockets opened with `?topics=devices` get
-  `{"type": "devices_changed", "version": n}`, at most once a second (see [`/ws/panel`](#wspanel--dashboard)). The panel then asks for `?since=` at once, and polls only every
+  `{"type": "devices_changed", "version": n}`, at most once a second (see [`/ws/panel`](#wspanel-dashboard)). The panel then asks for `?since=` at once, and polls only every
   30 seconds while its socket is open (every 5 seconds without one).
 - Changes made outside the server (for example by hand in SQL) are noticed within a minute.
 
