@@ -24,6 +24,6 @@ pyasn1==0.6.4
 redis==8.1.0
 # Dolaylı bağımlılıklar (Starlette/uvicorn): güvenlik düzeltmeleri, var olan bir venv'e "pip install -r" ile
 # kurulurken de gelsin diye sabittir (pip, sınırı karşılayan eski sürümü kendiliğinden yükseltmez).
-anyio==4.15.1
+anyio==4.16.0
 click==8.5.0
 idna==3.20
